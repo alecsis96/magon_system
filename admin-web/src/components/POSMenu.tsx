@@ -88,7 +88,7 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                 key={producto.id}
                 type="button"
                 onClick={() => handleSelectProduct(producto)}
-                className="group flex min-h-[188px] flex-col justify-between rounded-[1.6rem] border border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-3.5 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.3)] focus:outline-none focus:ring-4 focus:ring-amber-200/50 active:scale-[0.98] sm:min-h-[204px] sm:p-4"
+                className="group flex min-h-[172px] flex-col justify-between rounded-[1.6rem] border border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-3 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.3)] focus:outline-none focus:ring-4 focus:ring-amber-200/50 active:scale-[0.98] sm:min-h-[204px] sm:p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-white/90 sm:text-[11px]">
@@ -96,22 +96,22 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                   </span>
                 </div>
 
-                <div className="mt-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <h2 className="flex-1 text-lg font-black leading-tight text-white sm:text-xl">
+                <div className="mt-3 space-y-2.5">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                    <h2 className="text-lg font-black leading-tight text-white sm:flex-1 sm:text-xl">
                       {producto.nombre}
                     </h2>
-                    <span className="shrink-0 rounded-2xl bg-stone-950/20 px-2.5 py-1.5 text-sm font-black text-white backdrop-blur-sm sm:text-base">
+                    <span className="self-start rounded-2xl bg-stone-950/20 px-2.5 py-1.5 text-sm font-black text-white backdrop-blur-sm sm:shrink-0 sm:text-base">
                       {currencyFormatter.format(producto.precio)}
                     </span>
                   </div>
 
-                  <p className="line-clamp-3 text-xs leading-relaxed text-orange-50/90 sm:text-sm">
+                  <p className="line-clamp-2 text-xs leading-relaxed text-orange-50/90 sm:line-clamp-3 sm:text-sm">
                     {producto.descripcion}
                   </p>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between rounded-2xl bg-stone-950/20 px-3 py-2 text-xs font-semibold text-white/90 backdrop-blur-sm sm:text-sm">
+                <div className="mt-3 flex items-center justify-between rounded-2xl bg-stone-950/20 px-3 py-2 text-xs font-semibold text-white/90 backdrop-blur-sm sm:mt-4 sm:text-sm">
                   <span>Agregar</span>
                   <span className="text-base transition group-hover:translate-x-1">
                     +

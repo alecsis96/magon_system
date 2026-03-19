@@ -451,18 +451,18 @@ function App() {
               <POSMenu onSelectProduct={handleAddToCart} />
             </section>
 
-            <aside className="flex h-full flex-col rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)] ring-1 ring-slate-200">
+            <aside className="flex h-full flex-col rounded-[2rem] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.12)] ring-1 ring-slate-200 sm:p-5 xl:p-6">
               <CustomerSelector
                 onCustomerSelect={setSelectedCustomer}
                 tipoPedido={tipoPedido}
                 onTipoPedidoChange={setTipoPedido}
               />
 
-              <div className="mt-6 border-b border-dashed border-slate-200 pb-5">
+              <div className="mt-5 border-b border-dashed border-slate-200 pb-4 sm:mt-6 sm:pb-5">
                 <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
                   Ticket de venta
                 </p>
-                <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">
+                <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
                   Factura
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">
@@ -471,7 +471,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto py-5">
+              <div className="flex-1 space-y-3 overflow-y-auto py-4 sm:py-5">
                 {cart.length === 0 ? (
                   <div className="flex h-full min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm leading-relaxed text-slate-500">
                     El ticket esta vacio. Toca un producto del menu para agregarlo a la venta.

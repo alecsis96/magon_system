@@ -64,8 +64,7 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
             </h1>
           </div>
           <p className="max-w-lg text-[11px] text-stone-300 sm:text-sm">
-            Selecciona un producto para agregarlo al pedido. Menu optimizado para
-            captura rapida en pantalla tactil.
+            Selecciona un producto para agregarlo al pedido.
           </p>
         </div>
 
@@ -111,12 +110,6 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                   </p>
                 </div>
 
-                <div className="mt-2.5 flex items-center justify-between rounded-2xl bg-stone-950/20 px-3 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm sm:mt-4 sm:py-2 sm:text-sm">
-                  <span>Agregar</span>
-                  <span className="text-sm transition group-hover:translate-x-1 sm:text-base">
-                    +
-                  </span>
-                </div>
               </button>
             ))}
           </div>

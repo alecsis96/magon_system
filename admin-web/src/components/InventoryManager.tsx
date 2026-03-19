@@ -173,7 +173,7 @@ function OperationTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-2xl px-4 py-3 text-sm font-black transition focus:outline-none focus:ring-4 focus:ring-slate-200 ${
+      className={`rounded-2xl px-4 py-2.5 text-sm font-black transition focus:outline-none focus:ring-4 focus:ring-slate-200 ${
         active
           ? "bg-slate-900 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)]"
           : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
@@ -626,7 +626,7 @@ export function InventoryManager() {
 
   if (isLoading) {
     return (
-      <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
+      <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
         <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-medium text-slate-500">
           Cargando inventario del dia...
         </div>
@@ -636,8 +636,8 @@ export function InventoryManager() {
 
   if (!todayInventory) {
     return (
-      <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
-        <div className="mx-auto max-w-3xl rounded-[2rem] bg-slate-50 p-8">
+      <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
+        <div className="mx-auto max-w-3xl rounded-[2rem] bg-slate-50 p-7">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Inventario diario
           </p>
@@ -687,7 +687,7 @@ export function InventoryManager() {
     todayInventory[MERMA_FIELD_MAP[selectedPieceAdjustment]] ?? 0
 
   return (
-    <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
+    <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
@@ -734,12 +734,12 @@ export function InventoryManager() {
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
-        <article className="rounded-3xl border border-slate-200 bg-slate-900 p-6 text-white shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
+        <article className="rounded-3xl border border-slate-200 bg-slate-900 p-5 text-white shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Stock Disponible
           </p>
-          <p className="mt-3 text-5xl font-black text-white">
+          <p className="mt-3 text-4xl font-black text-white lg:text-5xl">
             {formatMetric(stockDisponible)}
           </p>
           <p className="mt-3 text-sm text-slate-300">
@@ -747,30 +747,30 @@ export function InventoryManager() {
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Vendidos
           </p>
-          <p className="mt-3 text-4xl font-black text-emerald-600">
+          <p className="mt-2 text-3xl font-black text-emerald-600">
             {formatMetric(getInventorySoldEquivalent(todayInventory))}
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Mermas
           </p>
-          <p className="mt-3 text-4xl font-black text-rose-600">
+          <p className="mt-2 text-3xl font-black text-rose-600">
             {formatMetric(getInventoryMermaPieces(todayInventory))}
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Conciliacion
           </p>
           <p
-            className={`mt-3 text-4xl font-black ${
+            className={`mt-2 text-3xl font-black ${
               conciliacion == null
                 ? "text-slate-500"
                 : conciliacion === 0
@@ -794,7 +794,8 @@ export function InventoryManager() {
         </article>
       </div>
 
-      <div className="mt-8 rounded-[2rem] bg-slate-50 p-6">
+      <div className="mt-8 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[2rem] bg-slate-50 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
@@ -804,7 +805,7 @@ export function InventoryManager() {
               Movimientos y correcciones
             </h3>
             <p className="mt-2 text-sm text-slate-500">
-              Todo lo operativo vive aqui: proveedor, mermas y correccion puntual por pieza.
+              Proveedor, mermas y correccion puntual por pieza.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -827,20 +828,20 @@ export function InventoryManager() {
         </div>
 
         {isClosed ? (
-          <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-medium text-amber-800">
+          <div className="mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800">
             El dia esta cerrado. Reabre en modo administrador si necesitas registrar ingresos, mermas o correcciones por pieza.
           </div>
         ) : null}
 
         {activeOperationTab === "proveedor" ? (
-          <section className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <h4 className="text-lg font-black text-slate-900">
+          <section className="mt-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <h4 className="text-base font-black text-slate-900">
               Movimiento de proveedor
             </h4>
             <p className="mt-1 text-sm text-slate-500">
               Usa esta vista si el pollo llega despues de abrir caja o si una parte se devuelve a cambio.
             </p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div>
                 <label htmlFor="ingresos-extra" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Pollo nuevo recibido
@@ -853,7 +854,7 @@ export function InventoryManager() {
                   value={ingresosExtra}
                   onChange={(event) => setIngresosExtra(event.target.value)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-lg font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
@@ -869,12 +870,12 @@ export function InventoryManager() {
                   value={devolucionProveedor}
                   onChange={(event) => setDevolucionProveedor(event.target.value)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-lg font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
             </div>
 
-            <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="mt-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               <span className="font-bold text-slate-900">Devuelto a cambio</span>{" "}
               descuenta del ingreso acumulado del dia. Puedes usar decimal en equivalencia de pollo si aplica.
             </div>
@@ -883,7 +884,7 @@ export function InventoryManager() {
               type="button"
               onClick={() => void handleRegisterIngreso()}
               disabled={isSavingIngreso || isClosed}
-              className="mt-5 rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+              className="mt-4 rounded-3xl bg-slate-900 px-5 py-3.5 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
             >
               {isSavingIngreso ? "Guardando movimiento..." : "Registrar Movimiento"}
             </button>
@@ -891,12 +892,12 @@ export function InventoryManager() {
         ) : null}
 
         {activeOperationTab === "mermas" ? (
-          <section className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <h4 className="text-lg font-black text-slate-900">Merma manual</h4>
+          <section className="mt-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <h4 className="text-base font-black text-slate-900">Merma manual</h4>
             <p className="mt-1 text-sm text-slate-500">
               Registra piezas caidas, golpeadas o quemadas sin salir de la operacion del dia.
             </p>
-            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
               <div>
                 <label htmlFor="merma-type" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Tipo de merma
@@ -906,7 +907,7 @@ export function InventoryManager() {
                   value={mermaType}
                   onChange={(event) => setMermaType(event.target.value as MermaType)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   <option value="caidos">Caidos / golpeados</option>
                   <option value="quemados">Quemados</option>
@@ -922,7 +923,7 @@ export function InventoryManager() {
                   value={mermaPiece}
                   onChange={(event) => setMermaPiece(event.target.value as InventoryPieceKey)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   {(Object.keys(PIECE_LABELS) as InventoryPieceKey[]).map((pieceKey) => (
                     <option key={pieceKey} value={pieceKey}>
@@ -943,7 +944,7 @@ export function InventoryManager() {
                   value={mermaAmount}
                   onChange={(event) => setMermaAmount(event.target.value)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
             </div>
@@ -952,7 +953,7 @@ export function InventoryManager() {
               type="button"
               onClick={() => void handleRegisterMerma()}
               disabled={isSavingMerma || isClosed}
-              className="mt-5 rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+              className="mt-4 rounded-3xl bg-slate-900 px-5 py-3.5 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
             >
               {isSavingMerma ? "Guardando..." : "Registrar Merma"}
             </button>
@@ -960,10 +961,10 @@ export function InventoryManager() {
         ) : null}
 
         {activeOperationTab === "ajustes" ? (
-          <section className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="mt-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <h4 className="text-lg font-black text-slate-900">
+                <h4 className="text-base font-black text-slate-900">
                   Correccion por pieza
                 </h4>
                 <p className="mt-1 text-sm text-slate-500">
@@ -978,8 +979,8 @@ export function InventoryManager() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                   Stock estimado
                 </p>
@@ -987,7 +988,7 @@ export function InventoryManager() {
                   {selectedPieceStock}
                 </p>
               </article>
-              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                   Ventas registradas
                 </p>
@@ -995,7 +996,7 @@ export function InventoryManager() {
                   {selectedPieceVentas}
                 </p>
               </article>
-              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                   Mermas registradas
                 </p>
@@ -1005,7 +1006,7 @@ export function InventoryManager() {
               </article>
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <div>
                 <label htmlFor="piece-ventas" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Ventas corregidas
@@ -1018,7 +1019,7 @@ export function InventoryManager() {
                   value={pieceVentasValue}
                   onChange={(event) => setPieceVentasValue(event.target.value)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-lg font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
@@ -1034,12 +1035,12 @@ export function InventoryManager() {
                   value={pieceMermasValue}
                   onChange={(event) => setPieceMermasValue(event.target.value)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-lg font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
             </div>
 
-            <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="mt-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               Esta correccion edita solo la pieza seleccionada y es util para cuadrar conteos sin alterar otras piezas.
             </div>
 
@@ -1047,15 +1048,15 @@ export function InventoryManager() {
               type="button"
               onClick={() => void handleSavePieceAdjustment()}
               disabled={isSavingPieceAdjustment || isClosed}
-              className="mt-5 rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+              className="mt-4 rounded-3xl bg-slate-900 px-5 py-3.5 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
             >
               {isSavingPieceAdjustment ? "Guardando ajuste..." : "Guardar Ajuste"}
             </button>
           </section>
         ) : null}
-      </div>
+        </div>
 
-      <div className="mt-8 rounded-[2rem] bg-slate-50 p-6">
+        <div className="rounded-[2rem] bg-slate-50 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
@@ -1070,7 +1071,7 @@ export function InventoryManager() {
           </p>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {(Object.keys(PIECE_LABELS) as InventoryPieceKey[]).map((pieceKey) => {
             const stock = getPieceStock(todayInventory, pieceKey)
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
@@ -1081,7 +1082,7 @@ export function InventoryManager() {
             return (
               <article
                 key={pieceKey}
-                className={`rounded-3xl border bg-white p-5 shadow-sm transition ${
+                className={`rounded-3xl border bg-white p-4 shadow-sm transition ${
                   isSelected ? "border-slate-900 ring-2 ring-slate-200" : "border-slate-200"
                 }`}
               >
@@ -1090,7 +1091,7 @@ export function InventoryManager() {
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       {PIECE_LABELS[pieceKey]}
                     </p>
-                    <p className="mt-3 text-4xl font-black text-slate-900">{stock}</p>
+                    <p className="mt-2 text-3xl font-black text-slate-900">{stock}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     {isLowStock ? (
@@ -1111,7 +1112,7 @@ export function InventoryManager() {
                     </button>
                   </div>
                 </div>
-                <div className="mt-4 space-y-1 text-sm text-slate-500">
+                <div className="mt-3 space-y-1 text-xs text-slate-500">
                   <p>Ventas: {ventas}</p>
                   <p>Mermas: {mermas}</p>
                 </div>
@@ -1120,9 +1121,10 @@ export function InventoryManager() {
           })}
         </div>
       </div>
+      </div>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[2rem] bg-slate-50 p-6">
+      <div className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-[2rem] bg-slate-50 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Cierre de turno
           </p>
@@ -1130,33 +1132,33 @@ export function InventoryManager() {
             Conciliacion final del dia
           </h3>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
-            <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <article className="rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                 Stock estimado
               </p>
-              <p className="mt-3 text-3xl font-black text-slate-900">
+              <p className="mt-2 text-2xl font-black text-slate-900">
                 {formatMetric(stockDisponible)}
               </p>
             </article>
 
-            <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <article className="rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                 Conteo fisico
               </p>
-              <p className="mt-3 text-3xl font-black text-slate-900">
+              <p className="mt-2 text-2xl font-black text-slate-900">
                 {todayInventory.conteo_fisico_cierre == null
                   ? "Pend."
                   : formatMetric(todayInventory.conteo_fisico_cierre)}
               </p>
             </article>
 
-            <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <article className="rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                 Diferencia
               </p>
               <p
-                className={`mt-3 text-3xl font-black ${
+                className={`mt-2 text-2xl font-black ${
                   conciliacion == null
                     ? "text-slate-500"
                     : conciliacion === 0
@@ -1172,7 +1174,7 @@ export function InventoryManager() {
           </div>
 
           {isClosed ? (
-            <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-slate-700">
                 Cierre registrado: {formatDateTime(todayInventory.cerrado_en)}
               </p>
@@ -1182,7 +1184,7 @@ export function InventoryManager() {
             </div>
           ) : (
             <>
-              <div className="mt-5">
+              <div className="mt-4">
                 <label htmlFor="conteo-fisico-cierre" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Conteo fisico real al cierre
                 </label>
@@ -1193,11 +1195,11 @@ export function InventoryManager() {
                   step="0.01"
                   value={conteoFisicoCierre}
                   onChange={(event) => setConteoFisicoCierre(event.target.value)}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-5 text-2xl font-black text-slate-900 outline-none transition focus:border-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>
 
-              <div className="mt-4">
+              <div className="mt-3">
                 <label htmlFor="notas-cierre" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Notas del cierre
                 </label>
@@ -1207,7 +1209,7 @@ export function InventoryManager() {
                   value={notasCierre}
                   onChange={(event) => setNotasCierre(event.target.value)}
                   placeholder="Ej. Sobraron 2 pollos enteros en parrilla y una pechuga en preparacion"
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-base font-medium text-slate-900 outline-none transition focus:border-slate-400"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>
 
@@ -1215,7 +1217,7 @@ export function InventoryManager() {
                 type="button"
                 onClick={() => void handleCloseDay()}
                 disabled={isClosingDay}
-                className="mt-6 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                className="mt-4 w-full rounded-3xl bg-slate-900 px-6 py-4 text-base font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
               >
                 {isClosingDay ? "Guardando cierre..." : "Cerrar Dia"}
               </button>
@@ -1223,7 +1225,7 @@ export function InventoryManager() {
           )}
         </section>
 
-        <section className="rounded-[2rem] bg-slate-50 p-6">
+        <section className="rounded-[2rem] bg-slate-50 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Herramientas admin
           </p>
@@ -1232,12 +1234,12 @@ export function InventoryManager() {
           </h3>
 
           {!adminAccess.isAdmin ? (
-            <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+            <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
               Inicia sesion con un usuario administrador autorizado en Supabase para reabrir un dia cerrado y continuar con correcciones posteriores.
             </div>
           ) : (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mt-4 space-y-3">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-sm font-semibold text-slate-800">
                   Estado actual: {isClosed ? "Dia cerrado" : "Dia abierto"}
                 </p>
@@ -1250,7 +1252,7 @@ export function InventoryManager() {
                 type="button"
                 onClick={() => void handleReopenDay()}
                 disabled={!isClosed || isReopeningDay}
-                className="w-full rounded-3xl border border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-900 shadow-sm transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                className="w-full rounded-3xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-black text-slate-900 shadow-sm transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
               >
                 {isReopeningDay ? "Reabriendo dia..." : "Reabrir Dia"}
               </button>

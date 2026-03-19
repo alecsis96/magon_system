@@ -147,6 +147,18 @@ function parseNonNegativeNumber(value: string) {
   return parsed
 }
 
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = error.message
+
+    if (typeof message === "string" && message.trim()) {
+      return message
+    }
+  }
+
+  return "No se pudo completar la operacion"
+}
+
 export function InventoryManager() {
   const [adminAccess, setAdminAccess] = useState<AdminAccess>({
     isAuthenticated: false,
@@ -296,7 +308,7 @@ export function InventoryManager() {
       toast.success("Inventario del dia iniciado correctamente")
     } catch (error) {
       console.error("Error al iniciar el dia:", error)
-      toast.error("No se pudo iniciar el inventario de hoy")
+      toast.error(getErrorMessage(error))
     } finally {
       setIsStartingDay(false)
     }
@@ -541,6 +553,7 @@ export function InventoryManager() {
               id="nuevos-ingresos"
               type="number"
               min="0"
+              step="0.1"
               value={nuevosIngresos}
               onChange={(event) => setNuevosIngresos(event.target.value)}
               className="mt-3 w-full rounded-3xl border border-slate-200 bg-white px-5 py-5 text-2xl font-black text-slate-900 outline-none transition focus:border-slate-400"

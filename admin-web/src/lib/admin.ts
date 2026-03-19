@@ -13,6 +13,14 @@ export async function getAdminAccess(): Promise<AdminAccess> {
   } = await supabase.auth.getUser()
 
   if (userError) {
+    if (userError.name === "AuthSessionMissingError") {
+      return {
+        isAuthenticated: false,
+        isAdmin: false,
+        email: null,
+      }
+    }
+
     throw userError
   }
 

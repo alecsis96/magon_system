@@ -172,6 +172,18 @@ function showSaleSuccessToast(totalVenta: number, piezas: number) {
   )
 }
 
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = error.message
+
+    if (typeof message === "string" && message.trim()) {
+      return message
+    }
+  }
+
+  return "No se pudo completar la operacion"
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<
     "POS" | "MONITOR" | "INVENTARIO" | "PRODUCTOS" | "CONTABILIDAD"
@@ -326,10 +338,13 @@ function App() {
       showSaleSuccessToast(total, piezasInventario)
     } catch (error) {
       console.error("Error al registrar la venta:", error)
-      const errorMessage =
-        error instanceof Error ? error.message : "No se pudo registrar la venta"
+      const errorMessage = getErrorMessage(error)
 
-      toast.error(errorMessage)
+      toast.error(
+        errorMessage === "Inventario de hoy no iniciado"
+          ? "Primero debes iniciar el inventario del dia en la pestaña Inventario"
+          : errorMessage,
+      )
     } finally {
       setIsCheckingOut(false)
     }

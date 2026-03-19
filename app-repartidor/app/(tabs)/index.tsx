@@ -116,6 +116,12 @@ export default function DeliveryHomeScreen() {
   const [capturingClientId, setCapturingClientId] = useState<string | null>(null);
   const [deliveringOrderId, setDeliveringOrderId] = useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [pushRegistrationStatus, setPushRegistrationStatus] = useState<
+    'idle' | 'registering' | 'ready' | 'error'
+  >('idle');
+  const [pushRegistrationMessage, setPushRegistrationMessage] = useState(
+    'Sin registrar',
+  );
 
   const fetchPedidos = useCallback(async () => {
     const { data, error } = await supabase
@@ -134,8 +140,13 @@ export default function DeliveryHomeScreen() {
   }, []);
 
   const registerPushToken = useCallback(async () => {
+    setPushRegistrationStatus('registering');
+    setPushRegistrationMessage('Registrando dispositivo...');
+
     if (!Device.isDevice) {
       console.log('Push notifications require a physical device.');
+      setPushRegistrationStatus('error');
+      setPushRegistrationMessage('Solo disponible en dispositivo fisico');
       return;
     }
 
@@ -144,6 +155,8 @@ export default function DeliveryHomeScreen() {
 
     if (!projectId) {
       console.warn('Expo projectId not found. Push token registration skipped.');
+      setPushRegistrationStatus('error');
+      setPushRegistrationMessage('Falta projectId de Expo');
       return;
     }
 
@@ -166,6 +179,8 @@ export default function DeliveryHomeScreen() {
 
     if (finalStatus !== 'granted') {
       console.warn('Push notification permission denied.');
+      setPushRegistrationStatus('error');
+      setPushRegistrationMessage('Permiso de notificaciones denegado');
       return;
     }
 
@@ -189,6 +204,8 @@ export default function DeliveryHomeScreen() {
     }
 
     console.log('Expo push token registrado:', expoPushToken.data);
+    setPushRegistrationStatus('ready');
+    setPushRegistrationMessage(`Push listo: ${expoPushToken.data.slice(0, 18)}...`);
   }, []);
 
   useEffect(() => {
@@ -207,6 +224,8 @@ export default function DeliveryHomeScreen() {
 
     void registerPushToken().catch((error) => {
       console.warn('Push registration skipped:', error);
+      setPushRegistrationStatus('error');
+      setPushRegistrationMessage(getErrorMessage(error));
     });
   }, [fetchPedidos, registerPushToken]);
 
@@ -536,6 +555,30 @@ export default function DeliveryHomeScreen() {
               <Text style={styles.headerStatValue}>{realtimeConnected ? 'Activo' : 'Polling'}</Text>
             </View>
           </View>
+
+          <View
+            style={[
+              styles.pushCard,
+              pushRegistrationStatus === 'ready'
+                ? styles.pushCardReady
+                : pushRegistrationStatus === 'error'
+                  ? styles.pushCardError
+                  : styles.pushCardNeutral,
+            ]}>
+            <View style={styles.pushCardCopy}>
+              <Text style={styles.pushCardLabel}>Push del dispositivo</Text>
+              <Text style={styles.pushCardValue}>{pushRegistrationMessage}</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.pushRetryButton}
+              onPress={() => void registerPushToken()}
+              disabled={pushRegistrationStatus === 'registering'}>
+              <Text style={styles.pushRetryButtonText}>
+                {pushRegistrationStatus === 'registering' ? 'Registrando...' : 'Registrar'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <FlatList
@@ -588,6 +631,53 @@ const styles = StyleSheet.create({
   headerStats: {
     flexDirection: 'row',
     gap: 10,
+  },
+  pushCard: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    gap: 12,
+  },
+  pushCardNeutral: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  pushCardReady: {
+    backgroundColor: 'rgba(16,185,129,0.14)',
+    borderColor: 'rgba(16,185,129,0.24)',
+  },
+  pushCardError: {
+    backgroundColor: 'rgba(239,68,68,0.14)',
+    borderColor: 'rgba(239,68,68,0.24)',
+  },
+  pushCardCopy: {
+    gap: 4,
+  },
+  pushCardLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    color: '#cbd5e1',
+  },
+  pushCardValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  pushRetryButton: {
+    minHeight: 42,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  pushRetryButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ffffff',
   },
   headerStatCard: {
     flex: 1,

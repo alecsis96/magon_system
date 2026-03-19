@@ -15,4 +15,6 @@ app-repartidor/node_modules/
 app-repartidor/dist/
 app-repartidor/.expo/
 app-repartidor/.expo-shared/
+app-repartidor/.git_backup_nested/
+app-repartidor/.vscode/
 *.tsbuildinfo

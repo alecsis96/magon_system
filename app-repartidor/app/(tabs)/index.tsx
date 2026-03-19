@@ -66,6 +66,13 @@ function getErrorMessage(error: unknown) {
     const message = error.message;
 
     if (typeof message === 'string' && message.trim()) {
+      if (
+        message.includes('Default FirebaseApp is not initialized') ||
+        message.includes('google-services')
+      ) {
+        return 'Push Android sin configurar. Falta enlazar Firebase/FCM y reconstruir la app.';
+      }
+
       return message;
     }
   }
@@ -116,6 +123,7 @@ export default function DeliveryHomeScreen() {
   const [capturingClientId, setCapturingClientId] = useState<string | null>(null);
   const [deliveringOrderId, setDeliveringOrderId] = useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [fetchErrorMessage, setFetchErrorMessage] = useState<string | null>(null);
   const [pushRegistrationStatus, setPushRegistrationStatus] = useState<
     'idle' | 'registering' | 'ready' | 'error'
   >('idle');
@@ -137,6 +145,7 @@ export default function DeliveryHomeScreen() {
     }
 
     setActiveOrders(normalizeOrders((data ?? []) as unknown[]));
+    setFetchErrorMessage(null);
   }, []);
 
   const registerPushToken = useCallback(async () => {
@@ -214,7 +223,9 @@ export default function DeliveryHomeScreen() {
         await fetchPedidos();
       } catch (error) {
         console.error('Error loading active delivery orders:', error);
-        Alert.alert('No se pudieron cargar los pedidos', 'Intenta actualizar nuevamente.');
+        const errorMessage = getErrorMessage(error);
+        setFetchErrorMessage(errorMessage);
+        Alert.alert('No se pudieron cargar los pedidos', errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -235,14 +246,20 @@ export default function DeliveryHomeScreen() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => {
         console.log('Realtime pedidos: cambio recibido');
         Vibration.vibrate();
-        void fetchPedidos();
+        void fetchPedidos().catch((error) => {
+          console.error('Error refreshing delivery orders from realtime:', error);
+          setFetchErrorMessage(getErrorMessage(error));
+        });
       })
       .subscribe((status) => {
         console.log('Realtime pedidos status:', status);
         setRealtimeConnected(status === 'SUBSCRIBED');
 
         if (status === 'SUBSCRIBED') {
-          void fetchPedidos();
+          void fetchPedidos().catch((error) => {
+            console.error('Error refreshing delivery orders on subscribe:', error);
+            setFetchErrorMessage(getErrorMessage(error));
+          });
         }
       });
 
@@ -253,7 +270,10 @@ export default function DeliveryHomeScreen() {
 
   useEffect(() => {
     const intervalId = setInterval(() => {
-      void fetchPedidos();
+      void fetchPedidos().catch((error) => {
+        console.error('Error refreshing delivery orders from polling:', error);
+        setFetchErrorMessage(getErrorMessage(error));
+      });
     }, 10000);
 
     return () => {
@@ -579,6 +599,13 @@ export default function DeliveryHomeScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {fetchErrorMessage ? (
+            <View style={styles.fetchErrorCard}>
+              <Text style={styles.fetchErrorLabel}>Error de carga</Text>
+              <Text style={styles.fetchErrorValue}>{fetchErrorMessage}</Text>
+            </View>
+          ) : null}
         </View>
 
         <FlatList
@@ -678,6 +705,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#ffffff',
+  },
+  fetchErrorCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.28)',
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  fetchErrorLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    color: '#fde68a',
+  },
+  fetchErrorValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fef3c7',
   },
   headerStatCard: {
     flex: 1,

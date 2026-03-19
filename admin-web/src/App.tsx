@@ -326,7 +326,10 @@ function App() {
       showSaleSuccessToast(total, piezasInventario)
     } catch (error) {
       console.error("Error al registrar la venta:", error)
-      toast.error("No se pudo registrar la venta")
+      const errorMessage =
+        error instanceof Error ? error.message : "No se pudo registrar la venta"
+
+      toast.error(errorMessage)
     } finally {
       setIsCheckingOut(false)
     }

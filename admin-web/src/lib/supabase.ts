@@ -6,4 +6,11 @@ import type { Database } from '../types/database';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'URL_TEMPORAL';
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'KEY_TEMPORAL';
 
+if (supabaseUrl === 'URL_TEMPORAL' || supabaseKey === 'KEY_TEMPORAL') {
+  console.error(
+    'Supabase env missing: verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.',
+  );
+}
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+

@@ -9,7 +9,15 @@ const DEFAULT_ACCESS: AdminAccess = {
   email: null,
 }
 
-export function AdminAccessButton() {
+interface AdminAccessButtonProps {
+  className?: string
+  panelClassName?: string
+}
+
+export function AdminAccessButton({
+  className,
+  panelClassName,
+}: AdminAccessButtonProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -106,7 +114,7 @@ export function AdminAccessButton() {
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className={`fixed bottom-4 right-3 z-40 rounded-full px-5 py-3 text-sm font-black shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition focus:outline-none focus:ring-4 sm:bottom-5 sm:right-5 ${
+        className={`${className ?? "rounded-full px-5 py-3"} z-40 text-sm font-black shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition focus:outline-none focus:ring-4 ${
           access.isAdmin
             ? "bg-emerald-600 text-white focus:ring-emerald-200"
             : "bg-slate-900 text-white focus:ring-slate-300"
@@ -116,7 +124,9 @@ export function AdminAccessButton() {
       </button>
 
       {isOpen ? (
-        <div className="fixed bottom-20 left-3 right-3 z-40 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)] sm:left-auto sm:right-5 sm:w-[24rem]">
+        <div
+          className={`${panelClassName ?? "absolute right-0 top-[calc(100%+0.75rem)] w-[min(92vw,24rem)]"} z-40 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]`}
+        >
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">

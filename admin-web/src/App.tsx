@@ -224,6 +224,10 @@ function App() {
           : null,
       },
     ])
+    toast.success("Producto agregado", {
+      duration: 1000,
+      position: "bottom-left",
+    })
   }
 
   function handleMermaChange(lineId: string, merma: string) {
@@ -368,7 +372,6 @@ function App() {
   return (
     <main className="min-h-screen overflow-x-clip bg-gray-100 p-4 text-slate-900 sm:p-6">
       <Toaster position="top-right" />
-      <AdminAccessButton />
 
       <div className="mx-auto max-w-7xl">
         <nav className="relative mb-6 flex flex-wrap items-center gap-2 rounded-[1.75rem] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 sm:flex-nowrap">
@@ -413,6 +416,13 @@ function App() {
             Menu
           </button>
 
+          <div className="relative shrink-0">
+            <AdminAccessButton
+              className="rounded-2xl px-4 py-3"
+              panelClassName="absolute right-0 top-[calc(100%+0.5rem)] w-[min(92vw,24rem)]"
+            />
+          </div>
+
           {isMoreMenuOpen ? (
             <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:left-auto sm:right-2 sm:min-w-[14rem]">
               {([
@@ -446,23 +456,23 @@ function App() {
         </nav>
 
         {activeTab === "POS" ? (
-          <div className="grid min-h-[calc(100vh-9rem)] gap-6 lg:grid-cols-[7fr_3fr]">
-            <section className="min-h-[60vh]">
+          <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
+            <section className="h-full w-full overflow-y-auto p-4 md:w-[60%]">
               <POSMenu onSelectProduct={handleAddToCart} />
             </section>
 
-            <aside className="flex h-full flex-col rounded-[2rem] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.12)] ring-1 ring-slate-200 sm:p-5 xl:p-6">
+            <aside className="flex h-full w-full flex-col bg-gray-50 p-4 md:w-[40%] md:border-l">
               <CustomerSelector
                 onCustomerSelect={setSelectedCustomer}
                 tipoPedido={tipoPedido}
                 onTipoPedidoChange={setTipoPedido}
               />
 
-              <div className="mt-5 border-b border-dashed border-slate-200 pb-4 sm:mt-6 sm:pb-5">
+              <div className="mt-4 border-b border-dashed border-slate-200 pb-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
                   Ticket de venta
                 </p>
-                <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
                   Factura
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">
@@ -471,7 +481,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto py-4 sm:py-5">
+              <div className="flex-1 space-y-3 overflow-y-auto py-4">
                 {cart.length === 0 ? (
                   <div className="flex h-full min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm leading-relaxed text-slate-500">
                     El ticket esta vacio. Toca un producto del menu para agregarlo a la venta.
@@ -615,7 +625,7 @@ function App() {
                 )}
               </div>
 
-              <div className="border-t border-dashed border-slate-200 pt-5">
+              <div className="mt-auto border-t border-dashed border-slate-200 pt-4">
                 <div className="mb-4 space-y-4 rounded-3xl bg-slate-50 p-5">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">

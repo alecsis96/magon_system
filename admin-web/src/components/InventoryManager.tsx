@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import {
   PIECE_LABELS,
@@ -13,6 +13,7 @@ import type {
 } from "../types/database"
 
 type MermaType = "caidos" | "quemados"
+type OperationTab = "proveedor" | "mermas" | "ajustes"
 
 const PIECE_FIELD_MAP: Record<
   InventoryPieceKey,
@@ -159,6 +160,30 @@ function getErrorMessage(error: unknown) {
   return "No se pudo completar la operacion"
 }
 
+function OperationTabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl px-4 py-3 text-sm font-black transition focus:outline-none focus:ring-4 focus:ring-slate-200 ${
+        active
+          ? "bg-slate-900 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)]"
+          : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
 export function InventoryManager() {
   const [adminAccess, setAdminAccess] = useState<AdminAccess>({
     isAuthenticated: false,
@@ -175,12 +200,19 @@ export function InventoryManager() {
   const [mermaType, setMermaType] = useState<MermaType>("caidos")
   const [mermaPiece, setMermaPiece] = useState<InventoryPieceKey>("alas")
   const [mermaAmount, setMermaAmount] = useState("1")
+  const [activeOperationTab, setActiveOperationTab] =
+    useState<OperationTab>("proveedor")
+  const [selectedPieceAdjustment, setSelectedPieceAdjustment] =
+    useState<InventoryPieceKey>("alas")
+  const [pieceVentasValue, setPieceVentasValue] = useState("0")
+  const [pieceMermasValue, setPieceMermasValue] = useState("0")
   const [conteoFisicoCierre, setConteoFisicoCierre] = useState("")
   const [notasCierre, setNotasCierre] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isStartingDay, setIsStartingDay] = useState(false)
   const [isSavingIngreso, setIsSavingIngreso] = useState(false)
   const [isSavingMerma, setIsSavingMerma] = useState(false)
+  const [isSavingPieceAdjustment, setIsSavingPieceAdjustment] = useState(false)
   const [isClosingDay, setIsClosingDay] = useState(false)
   const [isReopeningDay, setIsReopeningDay] = useState(false)
 
@@ -225,6 +257,9 @@ export function InventoryManager() {
             : "",
         )
         setNotasCierre(inventory.notas_cierre ?? "")
+        setSelectedPieceAdjustment("alas")
+        setPieceVentasValue(String(inventory.ventas_alas ?? 0))
+        setPieceMermasValue(String(inventory.mermas_alas ?? 0))
         return
       }
 
@@ -301,10 +336,14 @@ export function InventoryManager() {
         throw error
       }
 
-      setTodayInventory(data as InventarioDiario)
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
       setNuevosIngresos("")
       setConteoFisicoCierre("")
       setNotasCierre("")
+      setSelectedPieceAdjustment("alas")
+      setPieceVentasValue(String(inventory.ventas_alas ?? 0))
+      setPieceMermasValue(String(inventory.mermas_alas ?? 0))
       toast.success("Inventario del dia iniciado correctamente")
     } catch (error) {
       console.error("Error al iniciar el dia:", error)
@@ -410,6 +449,9 @@ export function InventoryManager() {
       }
 
       setTodayInventory(data as InventarioDiario)
+      if (selectedPieceAdjustment === mermaPiece) {
+        setPieceMermasValue(String(data[MERMA_FIELD_MAP[mermaPiece]] ?? 0))
+      }
       setMermaAmount("1")
       toast.success("Merma registrada correctamente")
     } catch (error) {
@@ -417,6 +459,62 @@ export function InventoryManager() {
       toast.error("No se pudo registrar la merma")
     } finally {
       setIsSavingMerma(false)
+    }
+  }
+
+  function openPieceAdjustment(pieceKey: InventoryPieceKey) {
+    if (!todayInventory) {
+      return
+    }
+
+    setSelectedPieceAdjustment(pieceKey)
+    setPieceVentasValue(String(todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0))
+    setPieceMermasValue(String(todayInventory[MERMA_FIELD_MAP[pieceKey]] ?? 0))
+    setActiveOperationTab("ajustes")
+  }
+
+  async function handleSavePieceAdjustment() {
+    if (!todayInventory || todayInventory.cerrado_en) {
+      return
+    }
+
+    const ventasValue = parseNonNegativeNumber(pieceVentasValue)
+    const mermasValue = parseNonNegativeNumber(pieceMermasValue)
+
+    if (ventasValue == null || mermasValue == null) {
+      toast.error("Ingresa valores validos para ventas y mermas")
+      return
+    }
+
+    const ventasField = PIECE_FIELD_MAP[selectedPieceAdjustment]
+    const mermasField = MERMA_FIELD_MAP[selectedPieceAdjustment]
+
+    const payload: InventarioDiarioUpdate = {
+      [ventasField]: ventasValue,
+      [mermasField]: mermasValue,
+    }
+
+    try {
+      setIsSavingPieceAdjustment(true)
+
+      const { data, error } = await supabase
+        .from("inventario_diario")
+        .update(payload)
+        .eq("id", todayInventory.id)
+        .select()
+        .single()
+
+      if (error) {
+        throw error
+      }
+
+      setTodayInventory(data as InventarioDiario)
+      toast.success(`Ajuste guardado para ${PIECE_LABELS[selectedPieceAdjustment]}`)
+    } catch (error) {
+      console.error("Error al guardar ajuste por pieza:", error)
+      toast.error("No se pudo guardar el ajuste por pieza")
+    } finally {
+      setIsSavingPieceAdjustment(false)
     }
   }
 
@@ -454,9 +552,16 @@ export function InventoryManager() {
         throw error
       }
 
-      setTodayInventory(data as InventarioDiario)
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
       setConteoFisicoCierre("")
       setNotasCierre("")
+      setPieceVentasValue(
+        String(inventory[PIECE_FIELD_MAP[selectedPieceAdjustment]] ?? 0),
+      )
+      setPieceMermasValue(
+        String(inventory[MERMA_FIELD_MAP[selectedPieceAdjustment]] ?? 0),
+      )
       toast.success("Dia reabierto en modo administrador")
     } catch (error) {
       console.error("Error al reabrir el dia:", error)
@@ -547,7 +652,7 @@ export function InventoryManager() {
               htmlFor="nuevos-ingresos"
               className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
             >
-              ?Cuantos pollos frescos llegaron hoy? (Ej. 10, 15, 20)
+              Cuantos pollos frescos llegaron hoy? (Ej. 10, 15, 20)
             </label>
             <input
               id="nuevos-ingresos"
@@ -575,6 +680,11 @@ export function InventoryManager() {
   const stockDisponible = getStockFinalEquivalent(todayInventory)
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
+  const selectedPieceStock = getPieceStock(todayInventory, selectedPieceAdjustment)
+  const selectedPieceVentas =
+    todayInventory[PIECE_FIELD_MAP[selectedPieceAdjustment]] ?? 0
+  const selectedPieceMermas =
+    todayInventory[MERMA_FIELD_MAP[selectedPieceAdjustment]] ?? 0
 
   return (
     <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
@@ -619,7 +729,7 @@ export function InventoryManager() {
             Cierre de turno registrado correctamente
           </h3>
           <p className="mt-2 text-sm text-emerald-800">
-            Cerrado el {formatDateTime(todayInventory.cerrado_en)}. Ya no deberias registrar mermas ni ingresos operativos hasta reabrir el dia.
+            Cerrado el {formatDateTime(todayInventory.cerrado_en)}. Ya no deberias registrar movimientos operativos hasta reabrir el dia.
           </p>
         </div>
       ) : null}
@@ -684,112 +794,265 @@ export function InventoryManager() {
         </article>
       </div>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <section className="rounded-[2rem] bg-slate-50 p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-            Ingresos del proveedor
-          </p>
-          <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
-            Movimiento de pollo nuevo durante el dia
-          </h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Usa esta seccion si el pollo llega despues de abrir caja o si necesitas descontar producto que se devolvio a cambio por golpe o mal estado.
-          </p>
+      <div className="mt-8 rounded-[2rem] bg-slate-50 p-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+              Operacion del dia
+            </p>
+            <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
+              Movimientos y correcciones
+            </h3>
+            <p className="mt-2 text-sm text-slate-500">
+              Todo lo operativo vive aqui: proveedor, mermas y correccion puntual por pieza.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <OperationTabButton
+              active={activeOperationTab === "proveedor"}
+              label="Proveedor"
+              onClick={() => setActiveOperationTab("proveedor")}
+            />
+            <OperationTabButton
+              active={activeOperationTab === "mermas"}
+              label="Mermas"
+              onClick={() => setActiveOperationTab("mermas")}
+            />
+            <OperationTabButton
+              active={activeOperationTab === "ajustes"}
+              label="Ajuste por pieza"
+              onClick={() => setActiveOperationTab("ajustes")}
+            />
+          </div>
+        </div>
 
-          {isClosed ? (
-            <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-medium text-amber-800">
-              El dia esta cerrado. Reabre en modo administrador si necesitas registrar un ingreso o una devolucion adicional.
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label
-                    htmlFor="ingresos-extra"
-                    className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                  >
-                    Pollo nuevo recibido
-                  </label>
-                  <input
-                    id="ingresos-extra"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={ingresosExtra}
-                    onChange={(event) => setIngresosExtra(event.target.value)}
-                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400"
-                  />
-                </div>
+        {isClosed ? (
+          <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-medium text-amber-800">
+            El dia esta cerrado. Reabre en modo administrador si necesitas registrar ingresos, mermas o correcciones por pieza.
+          </div>
+        ) : null}
 
-                <div>
-                  <label
-                    htmlFor="devolucion-proveedor"
-                    className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                  >
-                    Devuelto a cambio
-                  </label>
-                  <input
-                    id="devolucion-proveedor"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={devolucionProveedor}
-                    onChange={(event) => setDevolucionProveedor(event.target.value)}
-                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400"
-                  />
-                </div>
+        {activeOperationTab === "proveedor" ? (
+          <section className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <h4 className="text-lg font-black text-slate-900">
+              Movimiento de proveedor
+            </h4>
+            <p className="mt-1 text-sm text-slate-500">
+              Usa esta vista si el pollo llega despues de abrir caja o si una parte se devuelve a cambio.
+            </p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label htmlFor="ingresos-extra" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Pollo nuevo recibido
+                </label>
+                <input
+                  id="ingresos-extra"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={ingresosExtra}
+                  onChange={(event) => setIngresosExtra(event.target.value)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                />
               </div>
 
-              <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-                El campo <span className="font-bold text-slate-900">Devuelto a cambio</span> descuenta del ingreso acumulado del dia. Si necesitas capturar una fraccion, puedes usar decimal en equivalencia de pollo.
+              <div>
+                <label htmlFor="devolucion-proveedor" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Devuelto a cambio
+                </label>
+                <input
+                  id="devolucion-proveedor"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={devolucionProveedor}
+                  onChange={(event) => setDevolucionProveedor(event.target.value)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              <span className="font-bold text-slate-900">Devuelto a cambio</span>{" "}
+              descuenta del ingreso acumulado del dia. Puedes usar decimal en equivalencia de pollo si aplica.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleRegisterIngreso()}
+              disabled={isSavingIngreso || isClosed}
+              className="mt-5 rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+            >
+              {isSavingIngreso ? "Guardando movimiento..." : "Registrar Movimiento"}
+            </button>
+          </section>
+        ) : null}
+
+        {activeOperationTab === "mermas" ? (
+          <section className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <h4 className="text-lg font-black text-slate-900">Merma manual</h4>
+            <p className="mt-1 text-sm text-slate-500">
+              Registra piezas caidas, golpeadas o quemadas sin salir de la operacion del dia.
+            </p>
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <div>
+                <label htmlFor="merma-type" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Tipo de merma
+                </label>
+                <select
+                  id="merma-type"
+                  value={mermaType}
+                  onChange={(event) => setMermaType(event.target.value as MermaType)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <option value="caidos">Caidos / golpeados</option>
+                  <option value="quemados">Quemados</option>
+                </select>
               </div>
 
-              <button
-                type="button"
-                onClick={() => void handleRegisterIngreso()}
-                disabled={isSavingIngreso}
-                className="rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
-              >
-                {isSavingIngreso ? "Guardando movimiento..." : "Registrar Movimiento"}
-              </button>
-            </div>
-          )}
-        </section>
+              <div>
+                <label htmlFor="merma-piece" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Pieza afectada
+                </label>
+                <select
+                  id="merma-piece"
+                  value={mermaPiece}
+                  onChange={(event) => setMermaPiece(event.target.value as InventoryPieceKey)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  {(Object.keys(PIECE_LABELS) as InventoryPieceKey[]).map((pieceKey) => (
+                    <option key={pieceKey} value={pieceKey}>
+                      {PIECE_LABELS[pieceKey]}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-        <section className="rounded-[2rem] bg-slate-50 p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-            Herramientas admin
-          </p>
-          <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
-            Reapertura y control operativo
-          </h3>
-
-          {!adminAccess.isAdmin ? (
-            <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
-              Inicia sesion con un usuario administrador autorizado en Supabase para reabrir un dia cerrado. La modificacion de productos tambien queda reservada a ese mismo rol.
+              <div>
+                <label htmlFor="merma-amount" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Cantidad
+                </label>
+                <input
+                  id="merma-amount"
+                  type="number"
+                  min="1"
+                  value={mermaAmount}
+                  onChange={(event) => setMermaAmount(event.target.value)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
             </div>
-          ) : (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-sm font-semibold text-slate-800">
-                  Estado actual: {isClosed ? "Dia cerrado" : "Dia abierto"}
+
+            <button
+              type="button"
+              onClick={() => void handleRegisterMerma()}
+              disabled={isSavingMerma || isClosed}
+              className="mt-5 rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+            >
+              {isSavingMerma ? "Guardando..." : "Registrar Merma"}
+            </button>
+          </section>
+        ) : null}
+
+        {activeOperationTab === "ajustes" ? (
+          <section className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h4 className="text-lg font-black text-slate-900">
+                  Correccion por pieza
+                </h4>
+                <p className="mt-1 text-sm text-slate-500">
+                  Ajusta directamente ventas y mermas de una pieza cuando hubo error de captura.
                 </p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Admin actual: {adminAccess.email ?? "Sin correo disponible"}. Usa la reapertura solo cuando necesites corregir conteo, registrar un ingreso atrasado o ajustar una devolucion del proveedor que no quedo capturada antes del cierre.
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Pieza seleccionada:{" "}
+                <span className="font-black text-slate-900">
+                  {PIECE_LABELS[selectedPieceAdjustment]}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Stock estimado
                 </p>
+                <p className="mt-3 text-3xl font-black text-slate-900">
+                  {selectedPieceStock}
+                </p>
+              </article>
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Ventas registradas
+                </p>
+                <p className="mt-3 text-3xl font-black text-emerald-600">
+                  {selectedPieceVentas}
+                </p>
+              </article>
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Mermas registradas
+                </p>
+                <p className="mt-3 text-3xl font-black text-rose-600">
+                  {selectedPieceMermas}
+                </p>
+              </article>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div>
+                <label htmlFor="piece-ventas" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Ventas corregidas
+                </label>
+                <input
+                  id="piece-ventas"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={pieceVentasValue}
+                  onChange={(event) => setPieceVentasValue(event.target.value)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                />
               </div>
 
-              <button
-                type="button"
-                onClick={() => void handleReopenDay()}
-                disabled={!isClosed || isReopeningDay}
-                className="w-full rounded-3xl border border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-900 shadow-sm transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-              >
-                {isReopeningDay ? "Reabriendo dia..." : "Reabrir Dia"}
-              </button>
+              <div>
+                <label htmlFor="piece-mermas" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Mermas corregidas
+                </label>
+                <input
+                  id="piece-mermas"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={pieceMermasValue}
+                  onChange={(event) => setPieceMermasValue(event.target.value)}
+                  disabled={isClosed}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
             </div>
-          )}
-        </section>
+
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Esta correccion edita solo la pieza seleccionada y es util para cuadrar conteos sin alterar otras piezas.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleSavePieceAdjustment()}
+              disabled={isSavingPieceAdjustment || isClosed}
+              className="mt-5 rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+            >
+              {isSavingPieceAdjustment ? "Guardando ajuste..." : "Guardar Ajuste"}
+            </button>
+          </section>
+        ) : null}
       </div>
 
       <div className="mt-8 rounded-[2rem] bg-slate-50 p-6">
@@ -813,11 +1076,14 @@ export function InventoryManager() {
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
             const mermas = todayInventory[MERMA_FIELD_MAP[pieceKey]] ?? 0
             const isLowStock = stock < 5
+            const isSelected = selectedPieceAdjustment === pieceKey
 
             return (
               <article
                 key={pieceKey}
-                className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+                className={`rounded-3xl border bg-white p-5 shadow-sm transition ${
+                  isSelected ? "border-slate-900 ring-2 ring-slate-200" : "border-slate-200"
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -826,11 +1092,24 @@ export function InventoryManager() {
                     </p>
                     <p className="mt-3 text-4xl font-black text-slate-900">{stock}</p>
                   </div>
-                  {isLowStock ? (
-                    <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-rose-600">
-                      Bajo Stock
-                    </span>
-                  ) : null}
+                  <div className="flex flex-col items-end gap-2">
+                    {isLowStock ? (
+                      <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-rose-600">
+                        Bajo Stock
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => openPieceAdjustment(pieceKey)}
+                      className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 ${
+                        isSelected
+                          ? "bg-slate-900 text-white"
+                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+                      }`}
+                    >
+                      Ajustar
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-slate-500">
                   <p>Ventas: {ventas}</p>
@@ -904,10 +1183,7 @@ export function InventoryManager() {
           ) : (
             <>
               <div className="mt-5">
-                <label
-                  htmlFor="conteo-fisico-cierre"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
+                <label htmlFor="conteo-fisico-cierre" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Conteo fisico real al cierre
                 </label>
                 <input
@@ -922,10 +1198,7 @@ export function InventoryManager() {
               </div>
 
               <div className="mt-4">
-                <label
-                  htmlFor="notas-cierre"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
+                <label htmlFor="notas-cierre" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   Notas del cierre
                 </label>
                 <textarea
@@ -952,83 +1225,34 @@ export function InventoryManager() {
 
         <section className="rounded-[2rem] bg-slate-50 p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-            Registrar merma manual
+            Herramientas admin
           </p>
           <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
-            Ajuste rapido de mermas
+            Reapertura y control operativo
           </h3>
 
-          {isClosed ? (
-            <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-medium text-amber-800">
-              El dia ya fue cerrado. Si necesitas ajustar mermas despues del cierre, primero define una politica de reapertura o captura un ajuste administrativo.
+          {!adminAccess.isAdmin ? (
+            <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+              Inicia sesion con un usuario administrador autorizado en Supabase para reabrir un dia cerrado y continuar con correcciones posteriores.
             </div>
           ) : (
-            <div className="mt-5 grid gap-4">
-              <div>
-                <label
-                  htmlFor="merma-type"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Tipo de merma
-                </label>
-                <select
-                  id="merma-type"
-                  value={mermaType}
-                  onChange={(event) => setMermaType(event.target.value as MermaType)}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
-                >
-                  <option value="caidos">Caidos / golpeados</option>
-                  <option value="quemados">Quemados</option>
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="merma-piece"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Pieza afectada
-                </label>
-                <select
-                  id="merma-piece"
-                  value={mermaPiece}
-                  onChange={(event) =>
-                    setMermaPiece(event.target.value as InventoryPieceKey)
-                  }
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
-                >
-                  {(Object.keys(PIECE_LABELS) as InventoryPieceKey[]).map((pieceKey) => (
-                    <option key={pieceKey} value={pieceKey}>
-                      {PIECE_LABELS[pieceKey]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="merma-amount"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Cantidad
-                </label>
-                <input
-                  id="merma-amount"
-                  type="number"
-                  min="1"
-                  value={mermaAmount}
-                  onChange={(event) => setMermaAmount(event.target.value)}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
-                />
+            <div className="mt-5 space-y-4">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-800">
+                  Estado actual: {isClosed ? "Dia cerrado" : "Dia abierto"}
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  Admin actual: {adminAccess.email ?? "Sin correo disponible"}. Reabre solo cuando necesites corregir conteos o movimientos posteriores al cierre.
+                </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => void handleRegisterMerma()}
-                disabled={isSavingMerma}
-                className="rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                onClick={() => void handleReopenDay()}
+                disabled={!isClosed || isReopeningDay}
+                className="w-full rounded-3xl border border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-900 shadow-sm transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
               >
-                {isSavingMerma ? "Guardando..." : "Registrar Merma"}
+                {isReopeningDay ? "Reabriendo dia..." : "Reabrir Dia"}
               </button>
             </div>
           )}

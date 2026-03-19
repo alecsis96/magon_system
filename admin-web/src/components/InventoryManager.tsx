@@ -626,7 +626,7 @@ export function InventoryManager() {
 
   if (isLoading) {
     return (
-      <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
+      <section className="rounded-[2rem] bg-white p-4 sm:p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
         <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-medium text-slate-500">
           Cargando inventario del dia...
         </div>
@@ -636,18 +636,18 @@ export function InventoryManager() {
 
   if (!todayInventory) {
     return (
-      <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
-        <div className="mx-auto max-w-3xl rounded-[2rem] bg-slate-50 p-7">
+      <section className="rounded-[2rem] bg-white p-4 sm:p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
+        <div className="mx-auto max-w-3xl rounded-[2rem] bg-slate-50 p-5 sm:p-7">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Inventario diario
           </p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900">
+          <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
             Apertura de turno
           </h2>
-          <p className="mt-6 text-3xl font-black text-amber-600">
+          <p className="mt-5 text-2xl font-black text-amber-600 sm:text-3xl">
             Stock sobrante de ayer: {formatMetric(stockAnterior)} pollos
           </p>
-          <div className="mt-8">
+          <div className="mt-6">
             <label
               htmlFor="nuevos-ingresos"
               className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
@@ -661,14 +661,14 @@ export function InventoryManager() {
               step="0.1"
               value={nuevosIngresos}
               onChange={(event) => setNuevosIngresos(event.target.value)}
-              className="mt-3 w-full rounded-3xl border border-slate-200 bg-white px-5 py-5 text-2xl font-black text-slate-900 outline-none transition focus:border-slate-400"
+              className="mt-3 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 sm:py-5 sm:text-2xl"
             />
           </div>
           <button
             type="button"
             onClick={() => void handleStartDay()}
             disabled={isStartingDay}
-            className="mt-6 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+            className="mt-5 w-full rounded-3xl bg-slate-900 px-6 py-4 text-base font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none sm:py-5 sm:text-lg"
           >
             {isStartingDay ? "Iniciando dia..." : "Iniciar Dia"}
           </button>
@@ -687,13 +687,13 @@ export function InventoryManager() {
     todayInventory[MERMA_FIELD_MAP[selectedPieceAdjustment]] ?? 0
 
   return (
-    <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
+    <section className="rounded-[2rem] bg-white p-4 sm:p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Inventario diario
           </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
             Control de inventario
           </h2>
         </div>
@@ -734,12 +734,12 @@ export function InventoryManager() {
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
-        <article className="rounded-3xl border border-slate-200 bg-slate-900 p-5 text-white shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+      <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
+        <article className="col-span-2 rounded-3xl border border-slate-200 bg-slate-900 p-4 text-white shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:p-5 xl:col-span-1">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Stock Disponible
           </p>
-          <p className="mt-3 text-4xl font-black text-white lg:text-5xl">
+          <p className="mt-2 text-3xl font-black text-white sm:text-4xl lg:text-5xl">
             {formatMetric(stockDisponible)}
           </p>
           <p className="mt-3 text-sm text-slate-300">
@@ -747,30 +747,30 @@ export function InventoryManager() {
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3.5 shadow-sm sm:p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Vendidos
           </p>
-          <p className="mt-2 text-3xl font-black text-emerald-600">
+          <p className="mt-2 text-2xl font-black text-emerald-600 sm:text-3xl">
             {formatMetric(getInventorySoldEquivalent(todayInventory))}
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3.5 shadow-sm sm:p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Mermas
           </p>
-          <p className="mt-2 text-3xl font-black text-rose-600">
+          <p className="mt-2 text-2xl font-black text-rose-600 sm:text-3xl">
             {formatMetric(getInventoryMermaPieces(todayInventory))}
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <article className="col-span-2 rounded-3xl border border-slate-200 bg-slate-50 p-3.5 shadow-sm sm:p-4 xl:col-span-1">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             Conciliacion
           </p>
           <p
-            className={`mt-2 text-3xl font-black ${
+            className={`mt-2 text-2xl font-black sm:text-3xl ${
               conciliacion == null
                 ? "text-slate-500"
                 : conciliacion === 0
@@ -794,14 +794,14 @@ export function InventoryManager() {
         </article>
       </div>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[2rem] bg-slate-50 p-5">
+      <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[2rem] bg-slate-50 p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
               Operacion del dia
             </p>
-            <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
               Movimientos y correcciones
             </h3>
             <p className="mt-2 text-sm text-slate-500">
@@ -1056,13 +1056,13 @@ export function InventoryManager() {
         ) : null}
         </div>
 
-        <div className="rounded-[2rem] bg-slate-50 p-5">
+        <div className="rounded-[2rem] bg-slate-50 p-4 sm:p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
               Inventario por pieza
             </p>
-            <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
               Stock fisico actual
             </h3>
           </div>
@@ -1071,7 +1071,7 @@ export function InventoryManager() {
           </p>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {(Object.keys(PIECE_LABELS) as InventoryPieceKey[]).map((pieceKey) => {
             const stock = getPieceStock(todayInventory, pieceKey)
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
@@ -1082,7 +1082,7 @@ export function InventoryManager() {
             return (
               <article
                 key={pieceKey}
-                className={`rounded-3xl border bg-white p-4 shadow-sm transition ${
+                className={`rounded-3xl border bg-white p-3.5 shadow-sm transition ${
                   isSelected ? "border-slate-900 ring-2 ring-slate-200" : "border-slate-200"
                 }`}
               >
@@ -1091,7 +1091,7 @@ export function InventoryManager() {
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       {PIECE_LABELS[pieceKey]}
                     </p>
-                    <p className="mt-2 text-3xl font-black text-slate-900">{stock}</p>
+                    <p className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">{stock}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     {isLowStock ? (
@@ -1102,7 +1102,7 @@ export function InventoryManager() {
                     <button
                       type="button"
                       onClick={() => openPieceAdjustment(pieceKey)}
-                      className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 ${
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 sm:px-3 sm:text-xs ${
                         isSelected
                           ? "bg-slate-900 text-white"
                           : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
@@ -1112,7 +1112,7 @@ export function InventoryManager() {
                     </button>
                   </div>
                 </div>
-                <div className="mt-3 space-y-1 text-xs text-slate-500">
+                <div className="mt-2.5 space-y-1 text-[11px] text-slate-500 sm:text-xs">
                   <p>Ventas: {ventas}</p>
                   <p>Mermas: {mermas}</p>
                 </div>
@@ -1123,12 +1123,12 @@ export function InventoryManager() {
       </div>
       </div>
 
-      <div className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[2rem] bg-slate-50 p-5">
+      <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-[2rem] bg-slate-50 p-4 sm:p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Cierre de turno
           </p>
-          <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
+          <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
             Conciliacion final del dia
           </h3>
 
@@ -1225,11 +1225,11 @@ export function InventoryManager() {
           )}
         </section>
 
-        <section className="rounded-[2rem] bg-slate-50 p-5">
+        <section className="rounded-[2rem] bg-slate-50 p-4 sm:p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Herramientas admin
           </p>
-          <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
+          <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
             Reapertura y control operativo
           </h3>
 

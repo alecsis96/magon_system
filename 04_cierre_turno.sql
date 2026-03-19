@@ -1,0 +1,5 @@
+﻿ALTER TABLE inventario_diario
+ADD COLUMN IF NOT EXISTS conteo_fisico_cierre DECIMAL(10, 2),
+ADD COLUMN IF NOT EXISTS diferencia_cierre DECIMAL(10, 2),
+ADD COLUMN IF NOT EXISTS notas_cierre TEXT,
+ADD COLUMN IF NOT EXISTS cerrado_en TIMESTAMP;

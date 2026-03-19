@@ -27,6 +27,18 @@ const EMPTY_FORM: CustomerFormData = {
   direccion: "",
 }
 
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = error.message
+
+    if (typeof message === "string" && message.trim()) {
+      return message
+    }
+  }
+
+  return "No se pudo completar la operacion."
+}
+
 function mapClienteToDisplayCustomer(cliente: Cliente): DisplayCustomer {
   return {
     cliente,
@@ -259,10 +271,7 @@ export function CustomerSelector({
       onCustomerSelect(nuevoCliente.cliente)
     } catch (error) {
       console.error("Error al guardar cliente:", error)
-      const message =
-        error instanceof Error
-          ? error.message
-          : "No se pudo guardar el cliente. Intenta de nuevo."
+      const message = getErrorMessage(error)
       setSaveError(message)
     } finally {
       setIsLoading(false)

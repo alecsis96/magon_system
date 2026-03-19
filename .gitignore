@@ -17,4 +17,6 @@ app-repartidor/.expo/
 app-repartidor/.expo-shared/
 app-repartidor/.git_backup_nested/
 app-repartidor/.vscode/
+app-repartidor/google-services.json
+app-repartidor/*firebase-adminsdk*.json
 *.tsbuildinfo

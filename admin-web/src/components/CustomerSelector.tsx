@@ -171,14 +171,18 @@ export function CustomerSelector({
     !selectedCustomerCard
 
   function handleStartCreating() {
+    const trimmedSearch = searchQuery.trim()
+    const searchHasLetters = /[a-zA-Z\u00C0-\u017F]/.test(trimmedSearch)
+    const searchHasDigits = /\d/.test(trimmedSearch)
+
     setIsCreating(true)
     setSelectedCustomerCard(null)
     setSaveError(null)
     setSearchError(null)
     onCustomerSelect(null)
     setFormData({
-      telefono: numericSearch,
-      nombreCompleto: "",
+      telefono: searchHasDigits ? trimmedSearch : "",
+      nombreCompleto: searchHasLetters ? trimmedSearch : "",
       direccion: "",
     })
   }

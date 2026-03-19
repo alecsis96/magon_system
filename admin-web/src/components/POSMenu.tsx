@@ -94,16 +94,19 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                   <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-white/90 sm:text-[11px]">
                     {producto.categoria ?? "Menu"}
                   </span>
-                  <span className="rounded-2xl bg-stone-950/20 px-2.5 py-1.5 text-base font-black text-white backdrop-blur-sm sm:text-lg">
-                    {currencyFormatter.format(producto.precio)}
-                  </span>
                 </div>
 
-                <div className="mt-4">
-                  <h2 className="text-lg font-black leading-tight text-white sm:text-xl">
-                    {producto.nombre}
-                  </h2>
-                  <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-orange-50/90 sm:text-sm">
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="flex-1 text-lg font-black leading-tight text-white sm:text-xl">
+                      {producto.nombre}
+                    </h2>
+                    <span className="shrink-0 rounded-2xl bg-stone-950/20 px-2.5 py-1.5 text-sm font-black text-white backdrop-blur-sm sm:text-base">
+                      {currencyFormatter.format(producto.precio)}
+                    </span>
+                  </div>
+
+                  <p className="line-clamp-3 text-xs leading-relaxed text-orange-50/90 sm:text-sm">
                     {producto.descripcion}
                   </p>
                 </div>

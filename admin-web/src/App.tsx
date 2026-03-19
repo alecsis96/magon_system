@@ -458,7 +458,7 @@ function App() {
                 onTipoPedidoChange={setTipoPedido}
               />
 
-              <div className="border-b border-dashed border-slate-200 pb-5">
+              <div className="mt-6 border-b border-dashed border-slate-200 pb-5">
                 <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
                   Ticket de venta
                 </p>

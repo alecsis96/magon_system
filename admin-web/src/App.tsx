@@ -190,6 +190,7 @@ function App() {
   >("POS")
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false)
   const [openMermaItemId, setOpenMermaItemId] = useState<string | null>(null)
   const [isCheckingOut, setIsCheckingOut] = useState(false)
   const [tipoPedido, setTipoPedido] = useState<"mostrador" | "domicilio">(
@@ -335,6 +336,7 @@ function App() {
       }
 
       setCart([])
+      setIsCheckoutModalOpen(false)
       setOpenMermaItemId(null)
       setSelectedCustomer(null)
       setTipoPedido("mostrador")
@@ -456,270 +458,316 @@ function App() {
         </nav>
 
         {activeTab === "POS" ? (
-          <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
-            <section className="h-full w-full overflow-y-auto p-4 md:w-[60%]">
-              <POSMenu onSelectProduct={handleAddToCart} />
-            </section>
+          <>
+            <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
+              <section className="flex-1 overflow-y-auto pb-24 md:w-[60%] md:pb-4">
+                <POSMenu onSelectProduct={handleAddToCart} />
+              </section>
+            </div>
 
-            <aside className="flex h-full w-full flex-col bg-gray-50 p-4 md:w-[40%] md:border-l">
-              <CustomerSelector
-                onCustomerSelect={setSelectedCustomer}
-                tipoPedido={tipoPedido}
-                onTipoPedidoChange={setTipoPedido}
-              />
-
-              <div className="mt-4 border-b border-dashed border-slate-200 pb-4">
-                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
-                  Ticket de venta
-                </p>
-                <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
-                  Factura
-                </h1>
-                <p className="mt-2 text-sm text-slate-500">
-                  {cart.length} producto{cart.length === 1 ? "" : "s"} agregado
-                  {cart.length === 1 ? "" : "s"}
-                </p>
-              </div>
-
-              <div className="flex-1 space-y-3 overflow-y-auto py-4">
-                {cart.length === 0 ? (
-                  <div className="flex h-full min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm leading-relaxed text-slate-500">
-                    El ticket esta vacio. Toca un producto del menu para agregarlo a la venta.
-                  </div>
-                ) : (
-                  cart.map((item, index) => {
-                    const detalle = getProductoDetalle(item.producto)
-                    const showMermaPanel = openMermaItemId === item.lineId
-                    const showThreeQuarterSelector =
-                      isThreeQuarterProduct(item.producto)
-
-                    return (
-                      <article
-                        key={item.lineId}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h2 className="text-base font-bold text-slate-900">
-                              {item.producto.nombre}
-                            </h2>
-                            <p className="mt-1 text-sm text-slate-500">
-                              {item.producto.descripcion}
-                            </p>
-                            {detalle.desglose ? (
-                              <p className="mt-1 text-xs text-slate-400">
-                                Desglose: {detalle.desglose}
-                              </p>
-                            ) : null}
-                            {showThreeQuarterSelector && item.threeQuarterVariant ? (
-                              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-600">
-                                Variante:{" "}
-                                {
-                                  THREE_QUARTER_VARIANT_LABELS[
-                                    item.threeQuarterVariant
-                                  ]
-                                }
-                              </p>
-                            ) : null}
-                            {item.merma ? (
-                              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-500">
-                                Merma registrada: {item.merma}
-                              </p>
-                            ) : null}
-                          </div>
-                          <span className="shrink-0 text-base font-black text-slate-900">
-                            {currencyFormatter.format(item.producto.precio)}
-                          </span>
-                        </div>
-
-                        <div className="mt-4 space-y-3">
-                          {showThreeQuarterSelector ? (
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
-                                Selecciona la combinacion del 3/4
-                              </p>
-                              <div className="mt-3 grid gap-2">
-                                {(
-                                  Object.keys(
-                                    THREE_QUARTER_VARIANT_LABELS,
-                                  ) as ThreeQuarterVariant[]
-                                ).map((variant) => {
-                                  const isActive = item.threeQuarterVariant === variant
-
-                                  return (
-                                    <button
-                                      key={variant}
-                                      type="button"
-                                      onClick={() =>
-                                        handleThreeQuarterVariantChange(
-                                          item.lineId,
-                                          variant,
-                                        )
-                                      }
-                                      className={`rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
-                                        isActive
-                                          ? "bg-slate-900 text-white"
-                                          : "bg-white text-slate-700 ring-1 ring-amber-200 hover:bg-amber-100"
-                                      }`}
-                                    >
-                                      {THREE_QUARTER_VARIANT_LABELS[variant]}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
-
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                              {detalle.piezasInventario} pzs salen de inventario
-                              {item.merma ? " + 1 reposicion" : ""}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFromCart(index)}
-                                className="px-2 py-1 text-xs font-semibold text-rose-500 transition hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                              >
-                                Eliminar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => toggleMerma(item.lineId)}
-                                className="rounded-2xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-rose-600 transition hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-4 focus:ring-rose-100"
-                              >
-                                Merma
-                              </button>
-                            </div>
-                          </div>
-
-                          {showMermaPanel ? (
-                            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                              <label
-                                htmlFor={`merma-${item.lineId}`}
-                                className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                              >
-                                Pieza defectuosa
-                              </label>
-                              <select
-                                id={`merma-${item.lineId}`}
-                                value={item.merma ?? ""}
-                                onChange={(event) =>
-                                  handleMermaChange(item.lineId, event.target.value)
-                                }
-                                className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
-                              >
-                                <option value="">Sin merma</option>
-                                {detalle.mermaOptions.map((option) => (
-                                  <option key={option} value={option}>
-                                    {option}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : null}
-                        </div>
-                      </article>
-                    )
-                  })
-                )}
-              </div>
-
-              <div className="mt-auto border-t border-dashed border-slate-200 pt-4">
-                <div className="mb-4 space-y-4 rounded-3xl bg-slate-50 p-5">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Metodo de pago
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {([
-                        { id: "efectivo", label: "Efectivo" },
-                        { id: "transferencia", label: "Transferencia" },
-                      ] as const).map((option) => {
-                        const isActive = metodoPago === option.id
-
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => setMetodoPago(option.id)}
-                            className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                              isActive
-                                ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)]"
-                                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Estado de pago
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {([
-                        { id: "pagado", label: "Pagado" },
-                        { id: "pendiente", label: "Pendiente" },
-                      ] as const).map((option) => {
-                        const isActive = estadoPago === option.id
-
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => setEstadoPago(option.id)}
-                            className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                              isActive
-                                ? option.id === "pagado"
-                                  ? "bg-emerald-600 text-white shadow-[0_10px_25px_rgba(5,150,105,0.22)]"
-                                  : "bg-rose-600 text-white shadow-[0_10px_25px_rgba(225,29,72,0.22)]"
-                                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
+            {cart.length > 0 ? (
+              <div className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-between rounded-t-xl bg-gray-900 p-4 text-white shadow-[0_-18px_40px_rgba(15,23,42,0.22)]">
+                <div>
+                  <p className="text-sm font-bold">
+                    {cart.length} producto{cart.length === 1 ? "" : "s"} -{" "}
+                    {currencyFormatter.format(total)}
+                  </p>
                 </div>
-
-                <div className="space-y-3 rounded-3xl bg-slate-50 p-5">
-                  <div className="flex items-center justify-between text-sm text-slate-500">
-                    <span>Subtotal</span>
-                    <span className="font-semibold text-slate-900">
-                      {currencyFormatter.format(subtotal)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-slate-500">
-                    <span>Piezas fisicas</span>
-                    <span className="font-semibold text-slate-900">
-                      {piezasInventario} pzs
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-lg font-black text-slate-900">
-                    <span>Total</span>
-                    <span>{currencyFormatter.format(total)}</span>
-                  </div>
-                </div>
-
                 <button
                   type="button"
-                  onClick={handleCheckout}
-                  disabled={isCheckoutDisabled}
-                  className="mt-5 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                  onClick={() => setIsCheckoutModalOpen(true)}
+                  className="rounded-2xl bg-white px-4 py-2.5 text-sm font-black text-slate-900 transition hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-white/30"
                 >
-                  {isCheckingOut
-                    ? "Registrando venta..."
-                    : `Confirmar Venta (${piezasInventario} pzs)`}
+                  Ir a Cobrar
                 </button>
               </div>
-            </aside>
-          </div>
+            ) : null}
+
+            {isCheckoutModalOpen ? (
+              <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-4">
+                <div className="mx-auto flex min-h-full max-w-3xl flex-col">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                        Cobro
+                      </p>
+                      <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900">
+                        Ticket de venta
+                      </h1>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCheckoutModalOpen(false)}
+                      className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-100"
+                    >
+                      Volver
+                    </button>
+                  </div>
+
+                  <div className="flex flex-1 flex-col">
+                    <CustomerSelector
+                      onCustomerSelect={setSelectedCustomer}
+                      tipoPedido={tipoPedido}
+                      onTipoPedidoChange={setTipoPedido}
+                    />
+
+                    <div className="mt-4 border-b border-dashed border-slate-200 pb-4">
+                      <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
+                        Factura
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {cart.length} producto{cart.length === 1 ? "" : "s"} agregado
+                        {cart.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+
+                    <div className="flex-1 space-y-3 overflow-y-auto py-4">
+                      {cart.length === 0 ? (
+                        <div className="flex h-full min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm leading-relaxed text-slate-500">
+                          El ticket esta vacio. Toca un producto del menu para agregarlo a la venta.
+                        </div>
+                      ) : (
+                        cart.map((item, index) => {
+                          const detalle = getProductoDetalle(item.producto)
+                          const showMermaPanel = openMermaItemId === item.lineId
+                          const showThreeQuarterSelector =
+                            isThreeQuarterProduct(item.producto)
+
+                          return (
+                            <article
+                              key={item.lineId}
+                              className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <h2 className="text-base font-bold text-slate-900">
+                                    {item.producto.nombre}
+                                  </h2>
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    {item.producto.descripcion}
+                                  </p>
+                                  {detalle.desglose ? (
+                                    <p className="mt-1 text-xs text-slate-400">
+                                      Desglose: {detalle.desglose}
+                                    </p>
+                                  ) : null}
+                                  {showThreeQuarterSelector &&
+                                  item.threeQuarterVariant ? (
+                                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-600">
+                                      Variante:{" "}
+                                      {
+                                        THREE_QUARTER_VARIANT_LABELS[
+                                          item.threeQuarterVariant
+                                        ]
+                                      }
+                                    </p>
+                                  ) : null}
+                                  {item.merma ? (
+                                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-500">
+                                      Merma registrada: {item.merma}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <span className="shrink-0 text-base font-black text-slate-900">
+                                  {currencyFormatter.format(item.producto.precio)}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 space-y-3">
+                                {showThreeQuarterSelector ? (
+                                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
+                                      Selecciona la combinacion del 3/4
+                                    </p>
+                                    <div className="mt-3 grid gap-2">
+                                      {(
+                                        Object.keys(
+                                          THREE_QUARTER_VARIANT_LABELS,
+                                        ) as ThreeQuarterVariant[]
+                                      ).map((variant) => {
+                                        const isActive =
+                                          item.threeQuarterVariant === variant
+
+                                        return (
+                                          <button
+                                            key={variant}
+                                            type="button"
+                                            onClick={() =>
+                                              handleThreeQuarterVariantChange(
+                                                item.lineId,
+                                                variant,
+                                              )
+                                            }
+                                            className={`rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
+                                              isActive
+                                                ? "bg-slate-900 text-white"
+                                                : "bg-white text-slate-700 ring-1 ring-amber-200 hover:bg-amber-100"
+                                            }`}
+                                          >
+                                            {THREE_QUARTER_VARIANT_LABELS[variant]}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    {detalle.piezasInventario} pzs salen de inventario
+                                    {item.merma ? " + 1 reposicion" : ""}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveFromCart(index)}
+                                      className="px-2 py-1 text-xs font-semibold text-rose-500 transition hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                                    >
+                                      Eliminar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleMerma(item.lineId)}
+                                      className="rounded-2xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-rose-600 transition hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-4 focus:ring-rose-100"
+                                    >
+                                      Merma
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {showMermaPanel ? (
+                                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                                    <label
+                                      htmlFor={`merma-${item.lineId}`}
+                                      className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
+                                    >
+                                      Pieza defectuosa
+                                    </label>
+                                    <select
+                                      id={`merma-${item.lineId}`}
+                                      value={item.merma ?? ""}
+                                      onChange={(event) =>
+                                        handleMermaChange(
+                                          item.lineId,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                                    >
+                                      <option value="">Sin merma</option>
+                                      {detalle.mermaOptions.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </article>
+                          )
+                        })
+                      )}
+                    </div>
+
+                    <div className="mt-auto border-t border-dashed border-slate-200 pt-4">
+                      <div className="mb-4 space-y-4 rounded-3xl bg-slate-50 p-5">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Metodo de pago
+                          </p>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {([
+                              { id: "efectivo", label: "Efectivo" },
+                              { id: "transferencia", label: "Transferencia" },
+                            ] as const).map((option) => {
+                              const isActive = metodoPago === option.id
+
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => setMetodoPago(option.id)}
+                                  className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                                    isActive
+                                      ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)]"
+                                      : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Estado de pago
+                          </p>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {([
+                              { id: "pagado", label: "Pagado" },
+                              { id: "pendiente", label: "Pendiente" },
+                            ] as const).map((option) => {
+                              const isActive = estadoPago === option.id
+
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => setEstadoPago(option.id)}
+                                  className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                                    isActive
+                                      ? option.id === "pagado"
+                                        ? "bg-emerald-600 text-white shadow-[0_10px_25px_rgba(5,150,105,0.22)]"
+                                        : "bg-rose-600 text-white shadow-[0_10px_25px_rgba(225,29,72,0.22)]"
+                                      : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 rounded-3xl bg-slate-50 p-5">
+                        <div className="flex items-center justify-between text-sm text-slate-500">
+                          <span>Subtotal</span>
+                          <span className="font-semibold text-slate-900">
+                            {currencyFormatter.format(subtotal)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm text-slate-500">
+                          <span>Piezas fisicas</span>
+                          <span className="font-semibold text-slate-900">
+                            {piezasInventario} pzs
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-lg font-black text-slate-900">
+                          <span>Total</span>
+                          <span>{currencyFormatter.format(total)}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleCheckout}
+                        disabled={isCheckoutDisabled}
+                        className="mt-5 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                      >
+                        {isCheckingOut
+                          ? "Registrando venta..."
+                          : `Confirmar Venta (${piezasInventario} pzs)`}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : activeTab === "MONITOR" ? (
           <OrdersMonitor />
         ) : activeTab === "INVENTARIO" ? (

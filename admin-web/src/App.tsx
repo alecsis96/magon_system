@@ -225,10 +225,6 @@ function App() {
           : null,
       },
     ])
-    toast.success("Producto agregado", {
-      duration: 1000,
-      position: "bottom-left",
-    })
   }
 
   function handleMermaChange(lineId: string, merma: string) {
@@ -418,13 +414,6 @@ function App() {
             Menu
           </button>
 
-          <div className="relative shrink-0">
-            <AdminAccessButton
-              className="rounded-2xl px-4 py-3"
-              panelClassName="absolute right-0 top-[calc(100%+0.5rem)] w-[min(92vw,24rem)]"
-            />
-          </div>
-
           {isMoreMenuOpen ? (
             <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:left-auto sm:right-2 sm:min-w-[14rem]">
               {([
@@ -453,6 +442,15 @@ function App() {
                   </button>
                 )
               })}
+
+              <div className="my-2 border-t border-slate-200" />
+
+              <div className="relative">
+                <AdminAccessButton
+                  className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-700 shadow-none transition hover:bg-slate-50 focus:ring-slate-100"
+                  panelClassName="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
+                />
+              </div>
             </div>
           ) : null}
         </nav>

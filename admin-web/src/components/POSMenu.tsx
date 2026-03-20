@@ -87,7 +87,7 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                 key={producto.id}
                 type="button"
                 onClick={() => handleSelectProduct(producto)}
-                className="group flex min-h-[148px] flex-col justify-between rounded-[1.45rem] border border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-2.5 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.3)] focus:outline-none focus:ring-4 focus:ring-amber-200/50 active:scale-[0.98] sm:min-h-[204px] sm:rounded-[1.6rem] sm:p-4"
+                className="group flex min-h-[150px] flex-col justify-between rounded-[1.45rem] border border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-2.5 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.3)] focus:outline-none focus:ring-4 focus:ring-amber-200/50 active:scale-[0.98] sm:min-h-[204px] sm:rounded-[1.6rem] sm:p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="rounded-full bg-white/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-white/90 sm:px-2.5 sm:text-[11px]">
@@ -95,17 +95,17 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                   </span>
                 </div>
 
-                <div className="mt-2.5 space-y-2">
-                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                    <h2 className="text-base font-black leading-tight text-white sm:flex-1 sm:text-xl">
+                <div className="mt-2.5 flex flex-1 flex-col justify-between gap-2">
+                  <div className="space-y-2">
+                    <h2 className="line-clamp-2 min-h-[2.5rem] text-base font-black leading-tight text-white sm:min-h-[3.5rem] sm:text-xl">
                       {producto.nombre}
                     </h2>
-                    <span className="self-start rounded-2xl bg-stone-950/20 px-2.5 py-1 text-xs font-black text-white backdrop-blur-sm sm:shrink-0 sm:px-2.5 sm:py-1.5 sm:text-base">
+                    <span className="inline-flex self-start rounded-2xl bg-stone-950/20 px-2.5 py-1 text-xs font-black text-white backdrop-blur-sm sm:px-2.5 sm:py-1.5 sm:text-base">
                       {currencyFormatter.format(producto.precio)}
                     </span>
                   </div>
 
-                  <p className="line-clamp-2 text-[11px] leading-relaxed text-orange-50/90 sm:line-clamp-3 sm:text-sm">
+                  <p className="line-clamp-2 min-h-[2.2rem] text-[11px] leading-relaxed text-orange-50/90 sm:min-h-[3.2rem] sm:text-sm">
                     {producto.descripcion}
                   </p>
                 </div>

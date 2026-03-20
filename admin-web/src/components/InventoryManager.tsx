@@ -200,12 +200,13 @@ export function InventoryManager() {
   const [mermaType, setMermaType] = useState<MermaType>("caidos")
   const [mermaPiece, setMermaPiece] = useState<InventoryPieceKey>("alas")
   const [mermaAmount, setMermaAmount] = useState("1")
+  const [mermaReason, setMermaReason] = useState("")
   const [activeOperationTab, setActiveOperationTab] =
     useState<OperationTab>("proveedor")
   const [selectedPieceAdjustment, setSelectedPieceAdjustment] =
     useState<InventoryPieceKey>("alas")
-  const [pieceVentasValue, setPieceVentasValue] = useState("0")
-  const [pieceMermasValue, setPieceMermasValue] = useState("0")
+  const [pieceStockValue, setPieceStockValue] = useState("0")
+  const [pieceAdjustmentReason, setPieceAdjustmentReason] = useState("")
   const [conteoFisicoCierre, setConteoFisicoCierre] = useState("")
   const [notasCierre, setNotasCierre] = useState("")
   const [isLoading, setIsLoading] = useState(true)
@@ -258,8 +259,8 @@ export function InventoryManager() {
         )
         setNotasCierre(inventory.notas_cierre ?? "")
         setSelectedPieceAdjustment("alas")
-        setPieceVentasValue(String(inventory.ventas_alas ?? 0))
-        setPieceMermasValue(String(inventory.mermas_alas ?? 0))
+        setPieceStockValue(String(getPieceStock(inventory, "alas")))
+        setPieceAdjustmentReason("")
         return
       }
 
@@ -279,6 +280,7 @@ export function InventoryManager() {
       setStockAnterior(previousData?.stock_final ?? 0)
       setConteoFisicoCierre("")
       setNotasCierre("")
+      setPieceAdjustmentReason("")
     } catch (error) {
       console.error("Error al cargar inventario diario:", error)
       toast.error("No se pudo cargar el inventario del dia")
@@ -291,6 +293,12 @@ export function InventoryManager() {
     void loadTodayInventory()
     void loadAdminAccess()
   }, [])
+
+  useEffect(() => {
+    if (!adminAccess.isAdmin && activeOperationTab === "ajustes") {
+      setActiveOperationTab("proveedor")
+    }
+  }, [activeOperationTab, adminAccess.isAdmin])
 
   async function handleStartDay() {
     const nuevosIngresosValue = parseNonNegativeNumber(nuevosIngresos)
@@ -342,8 +350,8 @@ export function InventoryManager() {
       setConteoFisicoCierre("")
       setNotasCierre("")
       setSelectedPieceAdjustment("alas")
-      setPieceVentasValue(String(inventory.ventas_alas ?? 0))
-      setPieceMermasValue(String(inventory.mermas_alas ?? 0))
+      setPieceStockValue(String(getPieceStock(inventory, "alas")))
+      setPieceAdjustmentReason("")
       toast.success("Inventario del dia iniciado correctamente")
     } catch (error) {
       console.error("Error al iniciar el dia:", error)
@@ -418,6 +426,11 @@ export function InventoryManager() {
       return
     }
 
+    if (!mermaReason.trim()) {
+      toast.error("Describe el motivo de la merma antes de guardarla")
+      return
+    }
+
     const mermaValue = Number(mermaAmount)
 
     if (!Number.isFinite(mermaValue) || mermaValue <= 0) {
@@ -450,9 +463,16 @@ export function InventoryManager() {
 
       setTodayInventory(data as InventarioDiario)
       if (selectedPieceAdjustment === mermaPiece) {
-        setPieceMermasValue(String(data[MERMA_FIELD_MAP[mermaPiece]] ?? 0))
+        setPieceStockValue(String(getPieceStock(data as InventarioDiario, mermaPiece)))
       }
+      console.info("Merma registrada", {
+        tipo: mermaType,
+        pieza: mermaPiece,
+        cantidad: mermaValue,
+        motivo: mermaReason.trim(),
+      })
       setMermaAmount("1")
+      setMermaReason("")
       toast.success("Merma registrada correctamente")
     } catch (error) {
       console.error("Error al registrar la merma:", error)
@@ -467,9 +487,14 @@ export function InventoryManager() {
       return
     }
 
+    if (!adminAccess.isAdmin) {
+      toast.error("Solo un administrador puede ajustar stock por pieza")
+      return
+    }
+
     setSelectedPieceAdjustment(pieceKey)
-    setPieceVentasValue(String(todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0))
-    setPieceMermasValue(String(todayInventory[MERMA_FIELD_MAP[pieceKey]] ?? 0))
+    setPieceStockValue(String(getPieceStock(todayInventory, pieceKey)))
+    setPieceAdjustmentReason("")
     setActiveOperationTab("ajustes")
   }
 
@@ -478,20 +503,37 @@ export function InventoryManager() {
       return
     }
 
-    const ventasValue = parseNonNegativeNumber(pieceVentasValue)
-    const mermasValue = parseNonNegativeNumber(pieceMermasValue)
+    if (!adminAccess.isAdmin) {
+      toast.error("Solo un administrador puede ajustar stock por pieza")
+      return
+    }
 
-    if (ventasValue == null || mermasValue == null) {
-      toast.error("Ingresa valores validos para ventas y mermas")
+    if (!pieceAdjustmentReason.trim()) {
+      toast.error("Agrega un motivo para el ajuste de stock")
+      return
+    }
+
+    const targetStockValue = parseNonNegativeNumber(pieceStockValue)
+
+    if (targetStockValue == null) {
+      toast.error("Ingresa un stock objetivo valido")
       return
     }
 
     const ventasField = PIECE_FIELD_MAP[selectedPieceAdjustment]
     const mermasField = MERMA_FIELD_MAP[selectedPieceAdjustment]
+    const totalAvailableWithoutMermas =
+      getTotalEnParrilla(todayInventory) * 2 - (todayInventory[ventasField] ?? 0)
+
+    if (targetStockValue > totalAvailableWithoutMermas) {
+      toast.error("El stock corregido no puede exceder el total disponible de esa pieza")
+      return
+    }
+
+    const nextMermasValue = totalAvailableWithoutMermas - targetStockValue
 
     const payload: InventarioDiarioUpdate = {
-      [ventasField]: ventasValue,
-      [mermasField]: mermasValue,
+      [mermasField]: nextMermasValue,
     }
 
     try {
@@ -509,7 +551,17 @@ export function InventoryManager() {
       }
 
       setTodayInventory(data as InventarioDiario)
-      toast.success(`Ajuste guardado para ${PIECE_LABELS[selectedPieceAdjustment]}`)
+      setPieceStockValue(
+        String(getPieceStock(data as InventarioDiario, selectedPieceAdjustment)),
+      )
+      console.info("Ajuste de stock por pieza", {
+        pieza: selectedPieceAdjustment,
+        stockObjetivo: targetStockValue,
+        mermasResultantes: nextMermasValue,
+        motivo: pieceAdjustmentReason.trim(),
+      })
+      setPieceAdjustmentReason("")
+      toast.success(`Stock ajustado para ${PIECE_LABELS[selectedPieceAdjustment]}`)
     } catch (error) {
       console.error("Error al guardar ajuste por pieza:", error)
       toast.error("No se pudo guardar el ajuste por pieza")
@@ -556,12 +608,10 @@ export function InventoryManager() {
       setTodayInventory(inventory)
       setConteoFisicoCierre("")
       setNotasCierre("")
-      setPieceVentasValue(
-        String(inventory[PIECE_FIELD_MAP[selectedPieceAdjustment]] ?? 0),
+      setPieceStockValue(
+        String(getPieceStock(inventory, selectedPieceAdjustment)),
       )
-      setPieceMermasValue(
-        String(inventory[MERMA_FIELD_MAP[selectedPieceAdjustment]] ?? 0),
-      )
+      setPieceAdjustmentReason("")
       toast.success("Dia reabierto en modo administrador")
     } catch (error) {
       console.error("Error al reabrir el dia:", error)
@@ -680,6 +730,7 @@ export function InventoryManager() {
   const stockDisponible = getStockFinalEquivalent(todayInventory)
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
+  const canUseAdminAdjustments = adminAccess.isAdmin
   const selectedPieceStock = getPieceStock(todayInventory, selectedPieceAdjustment)
   const selectedPieceVentas =
     todayInventory[PIECE_FIELD_MAP[selectedPieceAdjustment]] ?? 0
@@ -802,13 +853,13 @@ export function InventoryManager() {
               Operacion del dia
             </p>
             <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
-              Movimientos y correcciones
+              Movimientos del dia
             </h3>
             <p className="mt-2 text-sm text-slate-500">
-              Proveedor, mermas y correccion puntual por pieza.
+              Proveedor y mermas para operacion diaria. El ajuste fino de stock queda reservado para admin.
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className={`grid grid-cols-1 gap-2 ${canUseAdminAdjustments ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             <OperationTabButton
               active={activeOperationTab === "proveedor"}
               label="Proveedor"
@@ -819,11 +870,13 @@ export function InventoryManager() {
               label="Mermas"
               onClick={() => setActiveOperationTab("mermas")}
             />
-            <OperationTabButton
-              active={activeOperationTab === "ajustes"}
-              label="Ajuste por pieza"
-              onClick={() => setActiveOperationTab("ajustes")}
-            />
+            {canUseAdminAdjustments ? (
+              <OperationTabButton
+                active={activeOperationTab === "ajustes"}
+                label="Stock por pieza"
+                onClick={() => setActiveOperationTab("ajustes")}
+              />
+            ) : null}
           </div>
         </div>
 
@@ -895,7 +948,7 @@ export function InventoryManager() {
           <section className="mt-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
             <h4 className="text-base font-black text-slate-900">Merma manual</h4>
             <p className="mt-1 text-sm text-slate-500">
-              Registra piezas caidas, golpeadas o quemadas sin salir de la operacion del dia.
+              Registra piezas caidas, golpeadas o quemadas. El motivo es obligatorio para dejar claro por que se descuenta.
             </p>
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
               <div>
@@ -949,6 +1002,24 @@ export function InventoryManager() {
               </div>
             </div>
 
+            <div className="mt-3">
+              <label
+                htmlFor="merma-reason"
+                className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
+              >
+                Motivo de la merma
+              </label>
+              <textarea
+                id="merma-reason"
+                rows={3}
+                value={mermaReason}
+                onChange={(event) => setMermaReason(event.target.value)}
+                disabled={isClosed}
+                placeholder="Ej. Pechuga golpeada al bajar de la parrilla / Ala quemada / Cliente rechazo pieza"
+                className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              />
+            </div>
+
             <button
               type="button"
               onClick={() => void handleRegisterMerma()}
@@ -960,15 +1031,15 @@ export function InventoryManager() {
           </section>
         ) : null}
 
-        {activeOperationTab === "ajustes" ? (
+        {activeOperationTab === "ajustes" && canUseAdminAdjustments ? (
           <section className="mt-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <h4 className="text-base font-black text-slate-900">
-                  Correccion por pieza
+                  Ajuste admin por pieza
                 </h4>
                 <p className="mt-1 text-sm text-slate-500">
-                  Ajusta directamente ventas y mermas de una pieza cuando hubo error de captura.
+                  Corrige el stock fisico de una pieza sin tocar ventas. El sistema recalcula la merma necesaria para cuadrar el inventario.
                 </p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -982,7 +1053,7 @@ export function InventoryManager() {
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Stock estimado
+                  Stock actual
                 </p>
                 <p className="mt-3 text-3xl font-black text-slate-900">
                   {selectedPieceStock}
@@ -1008,40 +1079,39 @@ export function InventoryManager() {
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <div>
-                <label htmlFor="piece-ventas" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Ventas corregidas
+                <label htmlFor="piece-stock" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Stock fisico corregido
                 </label>
                 <input
-                  id="piece-ventas"
+                  id="piece-stock"
                   type="number"
                   min="0"
                   step="1"
-                  value={pieceVentasValue}
-                  onChange={(event) => setPieceVentasValue(event.target.value)}
+                  value={pieceStockValue}
+                  onChange={(event) => setPieceStockValue(event.target.value)}
                   disabled={isClosed}
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-lg font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
               <div>
-                <label htmlFor="piece-mermas" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Mermas corregidas
+                <label htmlFor="piece-adjustment-reason" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Motivo del ajuste
                 </label>
-                <input
-                  id="piece-mermas"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={pieceMermasValue}
-                  onChange={(event) => setPieceMermasValue(event.target.value)}
+                <textarea
+                  id="piece-adjustment-reason"
+                  rows={3}
+                  value={pieceAdjustmentReason}
+                  onChange={(event) => setPieceAdjustmentReason(event.target.value)}
                   disabled={isClosed}
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-lg font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  placeholder="Ej. Conteo fisico real distinto al estimado / Ajuste validado por admin"
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
             </div>
 
             <div className="mt-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              Esta correccion edita solo la pieza seleccionada y es util para cuadrar conteos sin alterar otras piezas.
+              Este ajuste no cambia ventas. Solo recalcula la merma de la pieza seleccionada para que el stock estimado coincida con el conteo validado por admin.
             </div>
 
             <button
@@ -1050,7 +1120,7 @@ export function InventoryManager() {
               disabled={isSavingPieceAdjustment || isClosed}
               className="mt-4 rounded-3xl bg-slate-900 px-5 py-3.5 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
             >
-              {isSavingPieceAdjustment ? "Guardando ajuste..." : "Guardar Ajuste"}
+              {isSavingPieceAdjustment ? "Guardando ajuste..." : "Guardar ajuste de stock"}
             </button>
           </section>
         ) : null}
@@ -1077,7 +1147,7 @@ export function InventoryManager() {
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
             const mermas = todayInventory[MERMA_FIELD_MAP[pieceKey]] ?? 0
             const isLowStock = stock < 5
-            const isSelected = selectedPieceAdjustment === pieceKey
+            const isSelected = canUseAdminAdjustments && selectedPieceAdjustment === pieceKey
 
             return (
               <article
@@ -1099,17 +1169,19 @@ export function InventoryManager() {
                         Bajo Stock
                       </span>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => openPieceAdjustment(pieceKey)}
-                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 sm:px-3 sm:text-xs ${
-                        isSelected
-                          ? "bg-slate-900 text-white"
-                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
-                      }`}
-                    >
-                      Ajustar
-                    </button>
+                    {canUseAdminAdjustments ? (
+                      <button
+                        type="button"
+                        onClick={() => openPieceAdjustment(pieceKey)}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 sm:px-3 sm:text-xs ${
+                          isSelected
+                            ? "bg-slate-900 text-white"
+                            : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+                        }`}
+                      >
+                        Ajustar
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="mt-2.5 space-y-1 text-[11px] text-slate-500 sm:text-xs">

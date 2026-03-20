@@ -6,7 +6,6 @@ import {
   Linking,
   Platform,
   RefreshControl,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,6 +18,7 @@ import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '@/src/lib/supabase';
 
@@ -66,6 +66,13 @@ function getErrorMessage(error: unknown) {
     const message = error.message;
 
     if (typeof message === 'string' && message.trim()) {
+      if (
+        message.includes('ExponentImagePicker.launchCameraAsync') ||
+        message.includes('NoSuchMethodError')
+      ) {
+        return 'La camara del APK quedo desalineada. Instala el build nuevo generado despues de actualizar dependencias.';
+      }
+
       if (
         message.includes('Default FirebaseApp is not initialized') ||
         message.includes('google-services')
@@ -117,6 +124,7 @@ function normalizeOrders(rawOrders: unknown[]): DeliveryOrder[] {
 }
 
 export default function DeliveryHomeScreen() {
+  const insets = useSafeAreaInsets();
   const [activeOrders, setActiveOrders] = useState<DeliveryOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -548,71 +556,94 @@ export default function DeliveryHomeScreen() {
     return 'No hay pedidos activos para reparto.';
   }, [isLoading]);
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.headerCard}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.headerEyebrow}>Reparto activo</Text>
-            <Text style={styles.headerTitle}>Pedidos en camino</Text>
-            <Text style={styles.headerSubtitle}>
-              Gestiona entregas, cobro y captura de clientes nuevos desde una sola pantalla.
-            </Text>
-          </View>
+  const listBottomPadding = useMemo(() => 28 + insets.bottom + 72, [insets.bottom]);
 
-          <View style={styles.headerStats}>
-            <View style={styles.headerStatCard}>
-              <Text style={styles.headerStatLabel}>Pedidos</Text>
-              <Text style={styles.headerStatValue}>{activeOrders.length}</Text>
-            </View>
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.headerCard}>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerEyebrow}>Reparto activo</Text>
+          <Text style={styles.headerTitle}>Pedidos en camino</Text>
+          <Text style={styles.headerSubtitle}>
+            Gestiona entregas, cobro y captura de clientes nuevos desde una sola pantalla.
+          </Text>
+        </View>
 
-            <View
-              style={[
-                styles.headerStatCard,
-                realtimeConnected ? styles.connectionCardOnline : styles.connectionCardOffline,
-              ]}>
-              <Text style={styles.headerStatLabel}>Tiempo real</Text>
-              <Text style={styles.headerStatValue}>{realtimeConnected ? 'Activo' : 'Polling'}</Text>
-            </View>
+        <View style={styles.headerStats}>
+          <View style={styles.headerStatCard}>
+            <Text style={styles.headerStatLabel}>Pedidos</Text>
+            <Text style={styles.headerStatValue}>{activeOrders.length}</Text>
           </View>
 
           <View
             style={[
-              styles.pushCard,
-              pushRegistrationStatus === 'ready'
-                ? styles.pushCardReady
-                : pushRegistrationStatus === 'error'
-                  ? styles.pushCardError
-                  : styles.pushCardNeutral,
+              styles.headerStatCard,
+              realtimeConnected ? styles.connectionCardOnline : styles.connectionCardOffline,
             ]}>
-            <View style={styles.pushCardCopy}>
-              <Text style={styles.pushCardLabel}>Push del dispositivo</Text>
-              <Text style={styles.pushCardValue}>{pushRegistrationMessage}</Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.pushRetryButton}
-              onPress={() => void registerPushToken()}
-              disabled={pushRegistrationStatus === 'registering'}>
-              <Text style={styles.pushRetryButtonText}>
-                {pushRegistrationStatus === 'registering' ? 'Registrando...' : 'Registrar'}
-              </Text>
-            </TouchableOpacity>
+            <Text style={styles.headerStatLabel}>Tiempo real</Text>
+            <Text style={styles.headerStatValue}>{realtimeConnected ? 'Activo' : 'Polling'}</Text>
           </View>
-
-          {fetchErrorMessage ? (
-            <View style={styles.fetchErrorCard}>
-              <Text style={styles.fetchErrorLabel}>Error de carga</Text>
-              <Text style={styles.fetchErrorValue}>{fetchErrorMessage}</Text>
-            </View>
-          ) : null}
         </View>
 
+        <View
+          style={[
+            styles.pushCard,
+            pushRegistrationStatus === 'ready'
+              ? styles.pushCardReady
+              : pushRegistrationStatus === 'error'
+                ? styles.pushCardError
+                : styles.pushCardNeutral,
+          ]}>
+          <View style={styles.pushCardCopy}>
+            <Text style={styles.pushCardLabel}>Push del dispositivo</Text>
+            <Text style={styles.pushCardValue}>{pushRegistrationMessage}</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.pushRetryButton}
+            onPress={() => void registerPushToken()}
+            disabled={pushRegistrationStatus === 'registering'}>
+            <Text style={styles.pushRetryButtonText}>
+              {pushRegistrationStatus === 'registering'
+                ? 'Registrando...'
+                : pushRegistrationStatus === 'ready'
+                  ? 'Actualizar'
+                  : 'Registrar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {fetchErrorMessage ? (
+          <View style={styles.fetchErrorCard}>
+            <Text style={styles.fetchErrorLabel}>Error de carga</Text>
+            <Text style={styles.fetchErrorValue}>{fetchErrorMessage}</Text>
+          </View>
+        ) : null}
+      </View>
+    ),
+    [
+      activeOrders.length,
+      fetchErrorMessage,
+      pushRegistrationMessage,
+      pushRegistrationStatus,
+      realtimeConnected,
+      registerPushToken,
+    ]
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <View style={styles.container}>
         <FlatList
           data={activeOrders}
           keyExtractor={(item) => item.id}
           renderItem={renderOrder}
-          contentContainerStyle={activeOrders.length === 0 ? styles.emptyContainer : styles.listContent}
+          ListHeaderComponent={listHeader}
+          contentContainerStyle={
+            activeOrders.length === 0
+              ? [styles.emptyContainer, { paddingBottom: listBottomPadding }]
+              : [styles.listContent, { paddingBottom: listBottomPadding }]
+          }
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />}
           ListEmptyComponent={<Text style={styles.emptyText}>{emptyMessage}</Text>}
           showsVerticalScrollIndicator={false}
@@ -629,15 +660,15 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 18,
-    paddingTop: 14,
+    paddingHorizontal: 16,
   },
   headerCard: {
     marginBottom: 18,
-    borderRadius: 28,
+    marginTop: 8,
+    borderRadius: 26,
     backgroundColor: '#0f172a',
     paddingHorizontal: 18,
-    paddingVertical: 20,
+    paddingVertical: 18,
     shadowColor: '#0f172a',
     shadowOpacity: 0.18,
     shadowRadius: 20,
@@ -646,7 +677,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   headerCopy: {
-    gap: 4,
+    gap: 6,
   },
   headerEyebrow: {
     fontSize: 11,
@@ -692,6 +723,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#ffffff',
+    lineHeight: 20,
   },
   pushRetryButton: {
     minHeight: 42,
@@ -758,35 +790,34 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   headerTitle: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '800',
     color: '#ffffff',
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#cbd5e1',
     lineHeight: 20,
   },
   listContent: {
-    paddingBottom: 28,
     gap: 14,
   },
   emptyContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 8,
   },
   emptyText: {
+    marginTop: 12,
     fontSize: 16,
     textAlign: 'center',
     color: '#6b7280',
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 28,
+    borderRadius: 24,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 14,
     shadowColor: '#0f172a',
     shadowOpacity: 0.1,
     shadowRadius: 18,
@@ -847,11 +878,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#0f172a',
-  },
-  cardSubtitle: {
-    marginTop: 2,
-    fontSize: 15,
-    color: '#374151',
   },
   paymentBadge: {
     borderRadius: 999,
@@ -968,6 +994,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#ffffff',
+    textAlign: 'center',
   },
   secondaryButton: {
     minHeight: 50,

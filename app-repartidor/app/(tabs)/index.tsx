@@ -4,7 +4,9 @@ import {
   FlatList,
   Image,
   Linking,
+  Modal,
   Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -138,6 +140,7 @@ export default function DeliveryHomeScreen() {
   const [pushRegistrationMessage, setPushRegistrationMessage] = useState(
     'Sin registrar',
   );
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const fetchPedidos = useCallback(async () => {
     const { data, error } = await supabase
@@ -512,10 +515,27 @@ export default function DeliveryHomeScreen() {
             </View>
           ) : (
             <View style={styles.photoSection}>
-              <Image source={{ uri: client.url_foto_fachada ?? undefined }} style={styles.photo} />
-              <TouchableOpacity style={styles.routeButton} onPress={() => void handleOpenRoute(client)}>
-                <Text style={styles.routeButtonText}>Ver ruta</Text>
+              <TouchableOpacity
+                style={styles.photoPreviewButton}
+                onPress={() => setPreviewImageUrl(client.url_foto_fachada ?? null)}
+                activeOpacity={0.9}>
+                <Image source={{ uri: client.url_foto_fachada ?? undefined }} style={styles.photo} />
+                <View style={styles.photoHintBadge}>
+                  <Text style={styles.photoHintText}>Ampliar</Text>
+                </View>
               </TouchableOpacity>
+
+              <View style={styles.photoActions}>
+                <TouchableOpacity style={styles.routeButton} onPress={() => void handleOpenRoute(client)}>
+                  <Text style={styles.routeButtonText}>Ver ruta</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.previewButton}
+                  onPress={() => setPreviewImageUrl(client.url_foto_fachada ?? null)}>
+                  <Text style={styles.previewButtonText}>Ver foto completa</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -649,6 +669,29 @@ export default function DeliveryHomeScreen() {
           showsVerticalScrollIndicator={false}
         />
       </View>
+
+      <Modal
+        visible={Boolean(previewImageUrl)}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPreviewImageUrl(null)}>
+        <View style={styles.previewOverlay}>
+          <Pressable style={styles.previewBackdrop} onPress={() => setPreviewImageUrl(null)} />
+
+          <View style={[styles.previewCard, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
+            <View style={styles.previewHeader}>
+              <Text style={styles.previewTitle}>Fachada del cliente</Text>
+              <TouchableOpacity style={styles.previewCloseButton} onPress={() => setPreviewImageUrl(null)}>
+                <Text style={styles.previewCloseText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+
+            {previewImageUrl ? (
+              <Image source={{ uri: previewImageUrl }} style={styles.previewImage} resizeMode="contain" />
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -946,8 +989,7 @@ const styles = StyleSheet.create({
   },
   photoSection: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'stretch',
     gap: 12,
     borderRadius: 20,
     backgroundColor: '#f8fafc',
@@ -961,9 +1003,36 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#e5e7eb',
   },
-  routeButton: {
+  photoPreviewButton: {
+    position: 'relative',
+    width: 82,
+    height: 82,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  photoHintBadge: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    bottom: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.76)',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+  },
+  photoHintText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#ffffff',
+  },
+  photoActions: {
     flex: 1,
-    minHeight: 52,
+    gap: 10,
+    justifyContent: 'center',
+  },
+  routeButton: {
+    minHeight: 44,
     borderRadius: 16,
     backgroundColor: '#dbeafe',
     alignItems: 'center',
@@ -974,6 +1043,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#1d4ed8',
+  },
+  previewButton: {
+    minHeight: 44,
+    borderRadius: 16,
+    backgroundColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
   },
   actions: {
     gap: 10,
@@ -1011,5 +1093,49 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.7)',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  previewBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  previewCard: {
+    borderRadius: 28,
+    backgroundColor: '#0f172a',
+    padding: 18,
+    gap: 16,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  previewTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  previewCloseButton: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  previewCloseText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  previewImage: {
+    width: '100%',
+    height: 420,
+    borderRadius: 20,
+    backgroundColor: '#020617',
   },
 });

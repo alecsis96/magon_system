@@ -10,6 +10,8 @@ import type {
   InventarioDiario,
   InventarioDiarioInsert,
   InventarioDiarioUpdate,
+  InventarioMovimiento,
+  InventarioMovimientoInsert,
 } from "../types/database"
 
 type MermaType = "caidos" | "quemados"
@@ -51,6 +53,24 @@ const MERMA_FIELD_MAP: Record<
   pechugas_chicas: "mermas_pechugas_c",
 }
 
+const AJUSTE_FIELD_MAP: Record<
+  InventoryPieceKey,
+  keyof Pick<
+    InventarioDiario,
+    | "ajustes_alas"
+    | "ajustes_piernas"
+    | "ajustes_muslos"
+    | "ajustes_pechugas_g"
+    | "ajustes_pechugas_c"
+  >
+> = {
+  alas: "ajustes_alas",
+  piernas: "ajustes_piernas",
+  muslos: "ajustes_muslos",
+  pechugas_grandes: "ajustes_pechugas_g",
+  pechugas_chicas: "ajustes_pechugas_c",
+}
+
 function getTodayLocalISODate() {
   const now = new Date()
   const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
@@ -87,16 +107,37 @@ function getInventoryMermaPieces(inventario: InventarioDiario) {
   )
 }
 
+function getInventoryAdjustmentPieces(inventario: InventarioDiario) {
+  return (
+    (inventario.ajustes_alas ?? 0) +
+    (inventario.ajustes_piernas ?? 0) +
+    (inventario.ajustes_muslos ?? 0) +
+    (inventario.ajustes_pechugas_g ?? 0) +
+    (inventario.ajustes_pechugas_c ?? 0)
+  )
+}
+
+function getInventoryAdjustmentEquivalent(inventario: InventarioDiario) {
+  if (typeof inventario.ajustes_admin === "number") {
+    return inventario.ajustes_admin
+  }
+
+  return getInventoryAdjustmentPieces(inventario) / 10
+}
+
 function getStockFinalEquivalent(inventario: InventarioDiario) {
   if (typeof inventario.stock_final === "number") {
     return inventario.stock_final
   }
 
-  const totalPieces = getTotalEnParrilla(inventario) * 10
-  const soldPieces = getInventorySoldEquivalent(inventario) * 10
-  const mermaPieces = getInventoryMermaPieces(inventario)
-
-  return (totalPieces - soldPieces - mermaPieces) / 10
+  return Number(
+    (
+      getTotalEnParrilla(inventario) -
+      getInventorySoldEquivalent(inventario) -
+      getInventoryMermaPieces(inventario) / 10 +
+      getInventoryAdjustmentEquivalent(inventario)
+    ).toFixed(2),
+  )
 }
 
 function formatMetric(value: number) {
@@ -132,16 +173,28 @@ function getPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey
   const totalPollos = getTotalEnParrilla(inventario)
   const ventasField = PIECE_FIELD_MAP[pieceKey]
   const mermasField = MERMA_FIELD_MAP[pieceKey]
+  const ajustesField = AJUSTE_FIELD_MAP[pieceKey]
   const ventas = inventario[ventasField] ?? 0
   const mermas = inventario[mermasField] ?? 0
+  const ajustes = inventario[ajustesField] ?? 0
 
-  return totalPollos * 2 - ventas - mermas
+  return totalPollos * 2 - ventas - mermas + ajustes
 }
 
 function parseNonNegativeNumber(value: string) {
   const parsed = Number(value)
 
   if (!Number.isFinite(parsed) || parsed < 0) {
+    return null
+  }
+
+  return parsed
+}
+
+function parseNonNegativeInteger(value: string) {
+  const parsed = Number(value)
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
     return null
   }
 
@@ -160,6 +213,48 @@ function getErrorMessage(error: unknown) {
   return "No se pudo completar la operacion"
 }
 
+function getMovementTitle(movement: InventarioMovimiento) {
+  switch (movement.tipo_movimiento) {
+    case "entrada_proveedor":
+      return "Entrada de proveedor"
+    case "devolucion_proveedor":
+      return "Devolucion a proveedor"
+    case "merma":
+      return "Merma"
+    case "ajuste_admin":
+      return "Ajuste admin"
+    case "cierre_turno":
+      return "Cierre de turno"
+    case "reapertura_admin":
+      return "Reapertura admin"
+    default:
+      return movement.tipo_movimiento.replace(/_/g, " ")
+  }
+}
+
+function getMovementQuantityLabel(movement: InventarioMovimiento) {
+  if (typeof movement.cantidad_piezas === "number") {
+    return `${formatSignedMetric(movement.cantidad_piezas)} pzs`
+  }
+
+  return `${formatSignedMetric(movement.cantidad_equivalente)} pollos`
+}
+
+function getMovementTone(movement: InventarioMovimiento) {
+  if (movement.tipo_movimiento === "entrada_proveedor") {
+    return "text-emerald-600"
+  }
+
+  if (movement.tipo_movimiento === "ajuste_admin") {
+    return "text-sky-600"
+  }
+
+  if (movement.tipo_movimiento === "cierre_turno" || movement.tipo_movimiento === "reapertura_admin") {
+    return "text-slate-600"
+  }
+
+  return "text-rose-600"
+}
 function OperationTabButton({
   active,
   label,
@@ -193,6 +288,7 @@ export function InventoryManager() {
   const [todayInventory, setTodayInventory] = useState<InventarioDiario | null>(
     null,
   )
+  const [todayMovements, setTodayMovements] = useState<InventarioMovimiento[]>([])
   const [stockAnterior, setStockAnterior] = useState(0)
   const [nuevosIngresos, setNuevosIngresos] = useState("")
   const [ingresosExtra, setIngresosExtra] = useState("")
@@ -231,6 +327,46 @@ export function InventoryManager() {
     }
   }
 
+  async function loadTodayMovements(inventoryId: string) {
+    const { data, error } = await supabase
+      .from("inventario_movimientos")
+      .select("*")
+      .eq("inventario_id", inventoryId)
+      .order("creado_en", { ascending: false })
+      .limit(8)
+
+    if (error) {
+      throw error
+    }
+
+    setTodayMovements((data ?? []) as InventarioMovimiento[])
+  }
+
+  async function createInventoryMovements(rows: InventarioMovimientoInsert[]) {
+    if (rows.length === 0) {
+      return
+    }
+
+    const { error } = await supabase.from("inventario_movimientos").insert(rows)
+
+    if (error) {
+      throw error
+    }
+  }
+
+  async function syncInventoryMovements(inventoryId: string) {
+    try {
+      await loadTodayMovements(inventoryId)
+    } catch (error) {
+      console.error("Error al recargar movimientos:", error)
+      toast.error("No se pudo actualizar la bitacora del dia")
+    }
+  }
+
+  function getMovementActor() {
+    return adminAccess.email ?? "operacion"
+  }
+
   async function loadTodayInventory() {
     const today = getTodayLocalISODate()
 
@@ -261,6 +397,7 @@ export function InventoryManager() {
         setSelectedPieceAdjustment("alas")
         setPieceStockValue(String(getPieceStock(inventory, "alas")))
         setPieceAdjustmentReason("")
+        await loadTodayMovements(inventory.id)
         return
       }
 
@@ -277,6 +414,7 @@ export function InventoryManager() {
       }
 
       setTodayInventory(null)
+      setTodayMovements([])
       setStockAnterior(previousData?.stock_final ?? 0)
       setConteoFisicoCierre("")
       setNotasCierre("")
@@ -316,6 +454,12 @@ export function InventoryManager() {
         stock_anterior: stockAnterior,
         nuevos_ingresos: nuevosIngresosValue,
         pollos_vendidos: 0,
+        ajustes_admin: 0,
+        ajustes_alas: 0,
+        ajustes_piernas: 0,
+        ajustes_muslos: 0,
+        ajustes_pechugas_g: 0,
+        ajustes_pechugas_c: 0,
         ventas_alas: 0,
         ventas_piernas: 0,
         ventas_muslos: 0,
@@ -346,6 +490,7 @@ export function InventoryManager() {
 
       const inventory = data as InventarioDiario
       setTodayInventory(inventory)
+      setTodayMovements([])
       setNuevosIngresos("")
       setConteoFisicoCierre("")
       setNotasCierre("")
@@ -402,9 +547,38 @@ export function InventoryManager() {
         throw error
       }
 
-      setTodayInventory(data as InventarioDiario)
+      const movements: InventarioMovimientoInsert[] = []
+      const actor = getMovementActor()
+
+      if (ingresosValue > 0) {
+        movements.push({
+          inventario_id: todayInventory.id,
+          fecha: todayInventory.fecha,
+          tipo_movimiento: "entrada_proveedor",
+          cantidad_equivalente: ingresosValue,
+          motivo: "Ingreso adicional del proveedor",
+          registrado_por: actor,
+        })
+      }
+
+      if (devolucionValue > 0) {
+        movements.push({
+          inventario_id: todayInventory.id,
+          fecha: todayInventory.fecha,
+          tipo_movimiento: "devolucion_proveedor",
+          cantidad_equivalente: -devolucionValue,
+          motivo: "Producto devuelto a cambio al proveedor",
+          registrado_por: actor,
+        })
+      }
+
+      await createInventoryMovements(movements)
+
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
       setIngresosExtra("")
       setDevolucionProveedor("")
+      await syncInventoryMovements(todayInventory.id)
 
       if (ingresosValue > 0 && devolucionValue > 0) {
         toast.success("Ingreso y devolucion del proveedor registrados")
@@ -431,9 +605,9 @@ export function InventoryManager() {
       return
     }
 
-    const mermaValue = Number(mermaAmount)
+    const mermaValue = parseNonNegativeInteger(mermaAmount)
 
-    if (!Number.isFinite(mermaValue) || mermaValue <= 0) {
+    if (mermaValue == null || mermaValue === 0) {
       toast.error("Ingresa una cantidad valida para la merma")
       return
     }
@@ -443,7 +617,7 @@ export function InventoryManager() {
     const pieceField = MERMA_FIELD_MAP[mermaPiece]
 
     const payload: InventarioDiarioUpdate = {
-      [generalField]: (todayInventory[generalField] ?? 0) + mermaValue / 10,
+      [generalField]: Number(((todayInventory[generalField] ?? 0) + mermaValue / 10).toFixed(2)),
       [pieceField]: (todayInventory[pieceField] ?? 0) + mermaValue,
     }
 
@@ -461,18 +635,28 @@ export function InventoryManager() {
         throw error
       }
 
-      setTodayInventory(data as InventarioDiario)
+      await createInventoryMovements([
+        {
+          inventario_id: todayInventory.id,
+          fecha: todayInventory.fecha,
+          tipo_movimiento: "merma",
+          subtipo: mermaType,
+          pieza: mermaPiece,
+          cantidad_equivalente: Number((-(mermaValue / 10)).toFixed(2)),
+          cantidad_piezas: -mermaValue,
+          motivo: mermaReason.trim(),
+          registrado_por: getMovementActor(),
+        },
+      ])
+
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
       if (selectedPieceAdjustment === mermaPiece) {
-        setPieceStockValue(String(getPieceStock(data as InventarioDiario, mermaPiece)))
+        setPieceStockValue(String(getPieceStock(inventory, mermaPiece)))
       }
-      console.info("Merma registrada", {
-        tipo: mermaType,
-        pieza: mermaPiece,
-        cantidad: mermaValue,
-        motivo: mermaReason.trim(),
-      })
       setMermaAmount("1")
       setMermaReason("")
+      await syncInventoryMovements(todayInventory.id)
       toast.success("Merma registrada correctamente")
     } catch (error) {
       console.error("Error al registrar la merma:", error)
@@ -513,27 +697,30 @@ export function InventoryManager() {
       return
     }
 
-    const targetStockValue = parseNonNegativeNumber(pieceStockValue)
+    const targetStockValue = parseNonNegativeInteger(pieceStockValue)
 
     if (targetStockValue == null) {
       toast.error("Ingresa un stock objetivo valido")
       return
     }
 
-    const ventasField = PIECE_FIELD_MAP[selectedPieceAdjustment]
-    const mermasField = MERMA_FIELD_MAP[selectedPieceAdjustment]
-    const totalAvailableWithoutMermas =
-      getTotalEnParrilla(todayInventory) * 2 - (todayInventory[ventasField] ?? 0)
+    const currentStock = getPieceStock(todayInventory, selectedPieceAdjustment)
+    const deltaPieces = targetStockValue - currentStock
 
-    if (targetStockValue > totalAvailableWithoutMermas) {
-      toast.error("El stock corregido no puede exceder el total disponible de esa pieza")
+    if (deltaPieces === 0) {
+      toast.error("El stock ya coincide con el valor capturado")
       return
     }
 
-    const nextMermasValue = totalAvailableWithoutMermas - targetStockValue
+    const ajusteField = AJUSTE_FIELD_MAP[selectedPieceAdjustment]
+    const nextPieceAdjustment = (todayInventory[ajusteField] ?? 0) + deltaPieces
+    const nextAdminAdjustment = Number(
+      ((todayInventory.ajustes_admin ?? 0) + deltaPieces / 10).toFixed(2),
+    )
 
     const payload: InventarioDiarioUpdate = {
-      [mermasField]: nextMermasValue,
+      [ajusteField]: nextPieceAdjustment,
+      ajustes_admin: nextAdminAdjustment,
     }
 
     try {
@@ -550,18 +737,28 @@ export function InventoryManager() {
         throw error
       }
 
-      setTodayInventory(data as InventarioDiario)
+      await createInventoryMovements([
+        {
+          inventario_id: todayInventory.id,
+          fecha: todayInventory.fecha,
+          tipo_movimiento: "ajuste_admin",
+          subtipo: "stock_por_pieza",
+          pieza: selectedPieceAdjustment,
+          cantidad_equivalente: Number((deltaPieces / 10).toFixed(2)),
+          cantidad_piezas: deltaPieces,
+          motivo: pieceAdjustmentReason.trim(),
+          registrado_por: getMovementActor(),
+        },
+      ])
+
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
       setPieceStockValue(
-        String(getPieceStock(data as InventarioDiario, selectedPieceAdjustment)),
+        String(getPieceStock(inventory, selectedPieceAdjustment)),
       )
-      console.info("Ajuste de stock por pieza", {
-        pieza: selectedPieceAdjustment,
-        stockObjetivo: targetStockValue,
-        mermasResultantes: nextMermasValue,
-        motivo: pieceAdjustmentReason.trim(),
-      })
       setPieceAdjustmentReason("")
-      toast.success(`Stock ajustado para ${PIECE_LABELS[selectedPieceAdjustment]}`)
+      await syncInventoryMovements(todayInventory.id)
+      toast.success("Stock ajustado para " + PIECE_LABELS[selectedPieceAdjustment])
     } catch (error) {
       console.error("Error al guardar ajuste por pieza:", error)
       toast.error("No se pudo guardar el ajuste por pieza")
@@ -612,6 +809,17 @@ export function InventoryManager() {
         String(getPieceStock(inventory, selectedPieceAdjustment)),
       )
       setPieceAdjustmentReason("")
+      await createInventoryMovements([
+        {
+          inventario_id: inventory.id,
+          fecha: inventory.fecha,
+          tipo_movimiento: "reapertura_admin",
+          cantidad_equivalente: 0,
+          motivo: "Dia reabierto por administrador",
+          registrado_por: getMovementActor(),
+        },
+      ])
+      await syncInventoryMovements(inventory.id)
       toast.success("Dia reabierto en modo administrador")
     } catch (error) {
       console.error("Error al reabrir el dia:", error)
@@ -657,7 +865,19 @@ export function InventoryManager() {
         throw error
       }
 
-      setTodayInventory(data as InventarioDiario)
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
+      await createInventoryMovements([
+        {
+          inventario_id: inventory.id,
+          fecha: inventory.fecha,
+          tipo_movimiento: "cierre_turno",
+          cantidad_equivalente: 0,
+          motivo: notasCierre.trim() || "Cierre de turno registrado",
+          registrado_por: getMovementActor(),
+        },
+      ])
+      await syncInventoryMovements(inventory.id)
 
       if (diferencia === 0) {
         toast.success("Cierre de turno conciliado sin diferencias")
@@ -736,6 +956,8 @@ export function InventoryManager() {
     todayInventory[PIECE_FIELD_MAP[selectedPieceAdjustment]] ?? 0
   const selectedPieceMermas =
     todayInventory[MERMA_FIELD_MAP[selectedPieceAdjustment]] ?? 0
+  const selectedPieceAjustes =
+    todayInventory[AJUSTE_FIELD_MAP[selectedPieceAdjustment]] ?? 0
 
   return (
     <section className="rounded-[2rem] bg-white p-4 sm:p-5 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
@@ -795,6 +1017,9 @@ export function InventoryManager() {
           </p>
           <p className="mt-3 text-sm text-slate-300">
             Inicio del dia: {formatMetric(getTotalEnParrilla(todayInventory))} pollos
+          </p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Ajustes admin: {formatSignedMetric(getInventoryAdjustmentEquivalent(todayInventory))}
           </p>
         </article>
 
@@ -1039,7 +1264,7 @@ export function InventoryManager() {
                   Ajuste admin por pieza
                 </h4>
                 <p className="mt-1 text-sm text-slate-500">
-                  Corrige el stock fisico de una pieza sin tocar ventas. El sistema recalcula la merma necesaria para cuadrar el inventario.
+                  Corrige el stock fisico de una pieza con una correccion administrativa separada de ventas y mermas reales.
                 </p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -1050,7 +1275,7 @@ export function InventoryManager() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                   Stock actual
@@ -1073,6 +1298,14 @@ export function InventoryManager() {
                 </p>
                 <p className="mt-3 text-3xl font-black text-rose-600">
                   {selectedPieceMermas}
+                </p>
+              </article>
+              <article className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Ajuste admin
+                </p>
+                <p className="mt-3 text-3xl font-black text-sky-600">
+                  {formatSignedMetric(selectedPieceAjustes)}
                 </p>
               </article>
             </div>
@@ -1111,7 +1344,7 @@ export function InventoryManager() {
             </div>
 
             <div className="mt-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              Este ajuste no cambia ventas. Solo recalcula la merma de la pieza seleccionada para que el stock estimado coincida con el conteo validado por admin.
+              Este ajuste suma o resta correccion administrativa; no cambia ventas ni merma real.
             </div>
 
             <button
@@ -1124,6 +1357,67 @@ export function InventoryManager() {
             </button>
           </section>
         ) : null}
+
+          <section className="mt-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-base font-black text-slate-900">Bitacora del dia</h4>
+                <p className="mt-1 text-sm text-slate-500">
+                  Ultimos movimientos auditables del inventario.
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                {todayMovements.length}
+              </span>
+            </div>
+
+            {todayMovements.length === 0 ? (
+              <div className="mt-4 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                Aun no hay movimientos registrados para hoy.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2.5">
+                {todayMovements.map((movement) => (
+                  <article
+                    key={movement.id}
+                    className="rounded-3xl border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-slate-900">
+                          {getMovementTitle(movement)}
+                        </p>
+                        <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                          {formatDateTime(movement.creado_en)}
+                        </p>
+                      </div>
+                      <p className={"text-sm font-black " + getMovementTone(movement)}>
+                        {getMovementQuantityLabel(movement)}
+                      </p>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                      {movement.pieza ? (
+                        <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600 ring-1 ring-slate-200">
+                          {PIECE_LABELS[movement.pieza as InventoryPieceKey] ?? movement.pieza}
+                        </span>
+                      ) : null}
+                      {movement.subtipo ? (
+                        <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600 ring-1 ring-slate-200">
+                          {movement.subtipo.replace(/_/g, " ")}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">
+                      {movement.motivo?.trim() || "Sin detalle adicional."}
+                    </p>
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Registrado por {movement.registrado_por ?? "operacion"}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
         <div className="rounded-[2rem] bg-slate-50 p-4 sm:p-5">
@@ -1137,7 +1431,7 @@ export function InventoryManager() {
             </h3>
           </div>
           <p className="text-sm text-slate-500">
-            Formula: ((stock anterior + nuevos ingresos) x 2) - ventas - mermas
+            Formula: ((stock anterior + nuevos ingresos) x 2) - ventas - mermas + ajustes
           </p>
         </div>
 
@@ -1146,6 +1440,7 @@ export function InventoryManager() {
             const stock = getPieceStock(todayInventory, pieceKey)
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
             const mermas = todayInventory[MERMA_FIELD_MAP[pieceKey]] ?? 0
+            const ajustes = todayInventory[AJUSTE_FIELD_MAP[pieceKey]] ?? 0
             const isLowStock = stock < 5
             const isSelected = canUseAdminAdjustments && selectedPieceAdjustment === pieceKey
 
@@ -1180,7 +1475,13 @@ export function InventoryManager() {
                             : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
                         }`}
                       >
-                        ✎
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 20 20"
+                          className="h-3.5 w-3.5 fill-current"
+                        >
+                          <path d="M14.7 2.3a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-8.9 8.9-3.5.8.8-3.5 8.8-9.2Z" />
+                        </svg>
                       </button>
                     ) : null}
                   </div>
@@ -1188,6 +1489,7 @@ export function InventoryManager() {
                 <div className="mt-2.5 space-y-1 text-[11px] text-slate-500 sm:text-xs">
                   <p>Ventas: {ventas}</p>
                   <p>Mermas: {mermas}</p>
+                  <p>Ajustes: {formatSignedMetric(ajustes)}</p>
                 </div>
               </article>
             )

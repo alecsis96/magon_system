@@ -77,6 +77,12 @@ export interface InventarioDiario extends Record<string, unknown> {
   stock_anterior: number;
   nuevos_ingresos: number;
   pollos_vendidos: number;
+  ajustes_admin: number;
+  ajustes_alas: number;
+  ajustes_piernas: number;
+  ajustes_muslos: number;
+  ajustes_pechugas_g: number;
+  ajustes_pechugas_c: number;
   ventas_alas: number | null;
   ventas_piernas: number | null;
   ventas_muslos: number | null;
@@ -101,6 +107,12 @@ export interface InventarioDiarioInsert extends Record<string, unknown> {
   stock_anterior?: number;
   nuevos_ingresos?: number;
   pollos_vendidos?: number;
+  ajustes_admin?: number;
+  ajustes_alas?: number;
+  ajustes_piernas?: number;
+  ajustes_muslos?: number;
+  ajustes_pechugas_g?: number;
+  ajustes_pechugas_c?: number;
   ventas_alas?: number | null;
   ventas_piernas?: number | null;
   ventas_muslos?: number | null;
@@ -124,6 +136,12 @@ export interface InventarioDiarioUpdate extends Record<string, unknown> {
   stock_anterior?: number;
   nuevos_ingresos?: number;
   pollos_vendidos?: number;
+  ajustes_admin?: number;
+  ajustes_alas?: number;
+  ajustes_piernas?: number;
+  ajustes_muslos?: number;
+  ajustes_pechugas_g?: number;
+  ajustes_pechugas_c?: number;
   ventas_alas?: number | null;
   ventas_piernas?: number | null;
   ventas_muslos?: number | null;
@@ -243,6 +261,45 @@ export interface PedidoUpdate extends Record<string, unknown> {
   fecha_creacion?: ISODateTimeString | null;
   estado_pago?: EstadoPago;
 }
+export interface InventarioMovimiento extends Record<string, unknown> {
+  id: UUID;
+  inventario_id: UUID;
+  fecha: ISODateString;
+  tipo_movimiento: string;
+  subtipo: string | null;
+  pieza: string | null;
+  cantidad_equivalente: number;
+  cantidad_piezas: number | null;
+  motivo: string | null;
+  registrado_por: string | null;
+  creado_en: ISODateTimeString;
+}
+export interface InventarioMovimientoInsert extends Record<string, unknown> {
+  id?: UUID;
+  inventario_id: UUID;
+  fecha: ISODateString;
+  tipo_movimiento: string;
+  subtipo?: string | null;
+  pieza?: string | null;
+  cantidad_equivalente?: number;
+  cantidad_piezas?: number | null;
+  motivo?: string | null;
+  registrado_por?: string | null;
+  creado_en?: ISODateTimeString;
+}
+export interface InventarioMovimientoUpdate extends Record<string, unknown> {
+  id?: UUID;
+  inventario_id?: UUID;
+  fecha?: ISODateString;
+  tipo_movimiento?: string;
+  subtipo?: string | null;
+  pieza?: string | null;
+  cantidad_equivalente?: number;
+  cantidad_piezas?: number | null;
+  motivo?: string | null;
+  registrado_por?: string | null;
+  creado_en?: ISODateTimeString;
+}
 export interface Egreso extends Record<string, unknown> {
   id: UUID;
   fecha: ISODateString;
@@ -322,6 +379,12 @@ export interface Database {
         Row: InventarioDiario;
         Insert: InventarioDiarioInsert;
         Update: InventarioDiarioUpdate;
+        Relationships: [];
+      };
+      inventario_movimientos: {
+        Row: InventarioMovimiento;
+        Insert: InventarioMovimientoInsert;
+        Update: InventarioMovimientoUpdate;
         Relationships: [];
       };
       pedido_detalles: {

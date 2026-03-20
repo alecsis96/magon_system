@@ -1173,13 +1173,14 @@ export function InventoryManager() {
                       <button
                         type="button"
                         onClick={() => openPieceAdjustment(pieceKey)}
+                        aria-label={`Ajustar ${PIECE_LABELS[pieceKey]}`}
                         className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 sm:px-3 sm:text-xs ${
                           isSelected
                             ? "bg-slate-900 text-white"
                             : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
                         }`}
                       >
-                        Ajustar
+                        ✎
                       </button>
                     ) : null}
                   </div>

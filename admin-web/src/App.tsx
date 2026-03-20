@@ -156,19 +156,16 @@ function isUuid(value: string) {
 function showSaleSuccessToast(totalVenta: number, piezas: number) {
   toast.custom(
     () => (
-      <div className="w-[min(92vw,24rem)] rounded-[1.75rem] border border-emerald-200 bg-white p-5 shadow-[0_24px_60px_rgba(5,150,105,0.18)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
-          Venta concretada
+      <div className="w-[min(90vw,18rem)] rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)] backdrop-blur">
+        <p className="text-sm font-semibold text-slate-900">
+          Venta registrada
         </p>
-        <h3 className="mt-2 text-2xl font-black text-slate-900">
-          {currencyFormatter.format(totalVenta)}
-        </h3>
-        <p className="mt-2 text-sm text-slate-500">
-          Salieron {piezas} piezas del inventario y el ticket se limpio.
+        <p className="mt-1 text-xs text-slate-500">
+          {currencyFormatter.format(totalVenta)} · {piezas} pzs
         </p>
       </div>
     ),
-    { duration: 3200 },
+    { duration: 1800, position: "top-right" },
   )
 }
 

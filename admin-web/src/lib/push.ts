@@ -39,17 +39,29 @@ export async function sendDispatchPushNotification(payload: PushPayload) {
     data: payload.data ?? {},
   }))
 
-  const response = await fetch("https://exp.host/--/api/v2/push/send", {
+  const response = await fetch("/api/expo-push", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify(messages),
+    body: JSON.stringify({ messages }),
   })
 
   if (!response.ok) {
-    throw new Error(`Expo Push API responded with ${response.status}`)
+    let errorMessage = `Push proxy responded with ${response.status}`
+
+    try {
+      const errorPayload = (await response.json()) as { error?: string }
+
+      if (typeof errorPayload.error === "string" && errorPayload.error.trim()) {
+        errorMessage = errorPayload.error
+      }
+    } catch {
+      // Ignore invalid JSON and keep the generic message.
+    }
+
+    throw new Error(errorMessage)
   }
 
   return {

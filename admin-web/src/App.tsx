@@ -256,6 +256,27 @@ function App() {
     )
   }
 
+  function handleRemoveLastFromCart() {
+    setCart((currentCart) => {
+      if (currentCart.length === 0) {
+        return currentCart
+      }
+
+      const nextCart = currentCart.slice(0, -1)
+      const removedItem = currentCart[currentCart.length - 1]
+
+      if (openMermaItemId === removedItem?.lineId) {
+        setOpenMermaItemId(null)
+      }
+
+      if (nextCart.length === 0) {
+        setIsCheckoutModalOpen(false)
+      }
+
+      return nextCart
+    })
+  }
+
   function toggleMerma(lineId: string) {
     setOpenMermaItemId((currentId) => (currentId === lineId ? null : lineId))
   }
@@ -374,8 +395,8 @@ function App() {
       <div className="mx-auto max-w-7xl">
         <nav className="relative mb-6 flex flex-wrap items-center gap-2 rounded-[1.75rem] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 sm:flex-nowrap">
           {([
-            { id: "POS", label: "Punto de Venta" },
-            { id: "MONITOR", label: "Pedidos Activos" },
+            { id: "POS", label: "Venta" },
+            { id: "MONITOR", label: "Pedidos" },
           ] as const).map((tab) => {
             const isActive = activeTab === tab.id
 
@@ -465,7 +486,15 @@ function App() {
 
             {cart.length > 0 ? (
               <div className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-between rounded-t-xl bg-gray-900 p-4 text-white shadow-[0_-18px_40px_rgba(15,23,42,0.22)]">
-                <div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleRemoveLastFromCart}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg font-black text-white transition hover:bg-white/20 focus:outline-none focus:ring-4 focus:ring-white/20"
+                    aria-label="Quitar ultimo producto"
+                  >
+                    -
+                  </button>
                   <p className="text-sm font-bold">
                     {cart.length} producto{cart.length === 1 ? "" : "s"} -{" "}
                     {currencyFormatter.format(total)}
@@ -781,4 +810,3 @@ function App() {
 }
 
 export default App
-

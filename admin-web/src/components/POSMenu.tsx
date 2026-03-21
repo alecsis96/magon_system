@@ -181,7 +181,9 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
         ) : (
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {filteredProducts.map((producto) => {
-              const isExtra = getProductFilter(producto) === "extras"
+              const productFilter = getProductFilter(producto)
+              const isExtra = productFilter === "extras"
+              const isCombo = productFilter === "combos"
               const secondaryBadge = isExtra ? null : getSubcategoryBadge(producto)
 
               return (
@@ -202,6 +204,10 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                     {secondaryBadge ? (
                       <span className="rounded-full bg-stone-950/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/85 sm:text-[10px]">
                         {secondaryBadge}
+                      </span>
+                    ) : isCombo ? (
+                      <span className="rounded-full bg-stone-950/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/85 sm:text-[10px]">
+                        Combo
                       </span>
                     ) : null}
                   </div>

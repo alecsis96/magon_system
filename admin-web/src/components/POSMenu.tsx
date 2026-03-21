@@ -184,7 +184,7 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
               const productFilter = getProductFilter(producto)
               const isExtra = productFilter === "extras"
               const isCombo = productFilter === "combos"
-              const secondaryBadge = isExtra ? null : getSubcategoryBadge(producto)
+              const secondaryBadge = isExtra || isCombo ? null : getSubcategoryBadge(producto)
 
               return (
                 <button
@@ -194,7 +194,9 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                   className={`group flex flex-col justify-between rounded-[1.45rem] border text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.3)] focus:outline-none focus:ring-4 active:scale-[0.98] ${
                     isExtra
                       ? "min-h-[124px] border-emerald-300/20 bg-gradient-to-br from-emerald-500 via-lime-500 to-amber-500 p-2.5 focus:ring-emerald-200/50 sm:min-h-[152px] sm:p-3"
-                      : "min-h-[150px] border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-2.5 focus:ring-amber-200/50 sm:min-h-[204px] sm:p-4"
+                      : isCombo
+                        ? "min-h-[150px] border-cyan-300/20 bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-700 p-2.5 focus:ring-cyan-200/50 sm:min-h-[204px] sm:p-4"
+                        : "min-h-[150px] border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-2.5 focus:ring-amber-200/50 sm:min-h-[204px] sm:p-4"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">

@@ -141,7 +141,7 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
   }
 
   return (
-    <section className="h-full rounded-[2rem] bg-stone-950 px-3 py-4 text-stone-50 sm:px-5 sm:py-5 lg:px-6">
+    <section className="min-h-full rounded-[2rem] bg-stone-950 px-3 py-4 text-stone-50 sm:px-5 sm:py-5 lg:px-6">
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-col gap-3 sm:mb-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -182,7 +182,7 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {filteredProducts.map((producto) => {
               const isExtra = getProductFilter(producto) === "extras"
-              const secondaryBadge = getSubcategoryBadge(producto)
+              const secondaryBadge = isExtra ? null : getSubcategoryBadge(producto)
 
               return (
                 <button

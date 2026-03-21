@@ -1,7 +1,7 @@
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
 
-async function validateAdminFromToken(accessToken) {
+async function validateSessionToken(accessToken) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error("Supabase server env missing for push proxy")
   }
@@ -15,28 +15,6 @@ async function validateAdminFromToken(accessToken) {
 
   if (!userResponse.ok) {
     return { ok: false, status: 401, error: "Sesion invalida o expirada" }
-  }
-
-  const user = await userResponse.json()
-
-  const adminResponse = await fetch(
-    `${SUPABASE_URL}/rest/v1/admin_usuarios?select=id&id=eq.${user.id}&activo=eq.true`,
-    {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  )
-
-  if (!adminResponse.ok) {
-    return { ok: false, status: 403, error: "No se pudo validar el acceso administrador" }
-  }
-
-  const adminRows = await adminResponse.json()
-
-  if (!Array.isArray(adminRows) || adminRows.length === 0) {
-    return { ok: false, status: 403, error: "Solo un administrador puede enviar notificaciones" }
   }
 
   return { ok: true }
@@ -54,13 +32,13 @@ export default async function handler(req, res) {
     : ""
 
   if (!accessToken) {
-    return res.status(401).json({ error: "Missing admin session token" })
+    return res.status(401).json({ error: "Missing session token" })
   }
 
-  const adminValidation = await validateAdminFromToken(accessToken)
+  const sessionValidation = await validateSessionToken(accessToken)
 
-  if (!adminValidation.ok) {
-    return res.status(adminValidation.status).json({ error: adminValidation.error })
+  if (!sessionValidation.ok) {
+    return res.status(sessionValidation.status).json({ error: sessionValidation.error })
   }
 
   const { messages } = req.body ?? {}

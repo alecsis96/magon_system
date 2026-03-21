@@ -9,6 +9,15 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 export type ProductoCategoria = "Clasico" | "Combo" | "Extra" | (string & {});
+export type ProductoSubcategoria =
+  | "pollo"
+  | "combo"
+  | "espagueti"
+  | "ensalada"
+  | "salsa"
+  | "papas_fritas"
+  | "otro"
+  | (string & {});
 export type PedidoEstado =
   | "en_preparacion"
   | "en_camino"
@@ -23,6 +32,7 @@ export interface Producto extends Record<string, unknown> {
   descripcion: string | null;
   precio: number;
   categoria: ProductoCategoria | null;
+  subcategoria: ProductoSubcategoria | null;
   clave_inventario: string | null;
   requiere_variante_3_4: boolean;
 }
@@ -32,6 +42,7 @@ export interface ProductoInsert extends Record<string, unknown> {
   descripcion?: string | null;
   precio: number;
   categoria?: ProductoCategoria | null;
+  subcategoria?: ProductoSubcategoria | null;
   clave_inventario?: string | null;
   requiere_variante_3_4?: boolean;
 }
@@ -41,6 +52,7 @@ export interface ProductoUpdate extends Record<string, unknown> {
   descripcion?: string | null;
   precio?: number;
   categoria?: ProductoCategoria | null;
+  subcategoria?: ProductoSubcategoria | null;
   clave_inventario?: string | null;
   requiere_variante_3_4?: boolean;
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { supabase } from "../lib/supabase"
-import type { Producto } from "../types/database"
+import type { Producto, ProductoCategoria, ProductoSubcategoria } from "../types/database"
 
 type InventoryProductKey = "1_pollo" | "3/4_pollo" | "1/2_pollo" | "combo_papas"
 
@@ -10,9 +10,28 @@ type ProductFormState = {
   nombre: string
   descripcion: string
   precio: string
-  categoria: string
+  categoria: ProductoCategoria
+  subcategoria: ProductoSubcategoria | ""
   claveInventario: "" | InventoryProductKey
   requiereVariante34: boolean
+}
+
+const CATEGORY_OPTIONS: Array<{ value: ProductoCategoria; label: string }> = [
+  { value: "Clasico", label: "Pollos" },
+  { value: "Combo", label: "Combos" },
+  { value: "Extra", label: "Extras" },
+]
+
+const SUBCATEGORY_OPTIONS: Record<ProductoCategoria, Array<{ value: ProductoSubcategoria; label: string }>> = {
+  Clasico: [{ value: "pollo", label: "Pollo" }],
+  Combo: [{ value: "combo", label: "Combo" }],
+  Extra: [
+    { value: "espagueti", label: "Espagueti" },
+    { value: "ensalada", label: "Ensalada" },
+    { value: "salsa", label: "Salsa" },
+    { value: "papas_fritas", label: "Papas fritas" },
+    { value: "otro", label: "Otro" },
+  ],
 }
 
 const EMPTY_FORM: ProductFormState = {
@@ -20,6 +39,7 @@ const EMPTY_FORM: ProductFormState = {
   descripcion: "",
   precio: "",
   categoria: "Clasico",
+  subcategoria: "pollo",
   claveInventario: "",
   requiereVariante34: false,
 }
@@ -35,6 +55,24 @@ const INVENTORY_OPTIONS: Array<{
   { value: "combo_papas", label: "Combo Papas" },
 ]
 
+function getCategoryLabel(categoria: string | null) {
+  if (!categoria) return "Sin categoria"
+  if (categoria.toLowerCase() === "clasico") return "Pollos"
+  if (categoria.toLowerCase() === "combo") return "Combos"
+  if (categoria.toLowerCase() === "extra") return "Extras"
+  return categoria
+}
+
+function getSubcategoryLabel(subcategoria: string | null) {
+  if (!subcategoria) return null
+
+  const normalized = subcategoria.toLowerCase()
+  const allOptions = Object.values(SUBCATEGORY_OPTIONS).flat()
+  const found = allOptions.find((option) => option.value.toLowerCase() === normalized)
+
+  return found?.label ?? subcategoria
+}
+
 function mapProductToForm(producto: Producto): ProductFormState {
   const claveInventario =
     producto.clave_inventario === "1_pollo" ||
@@ -44,11 +82,25 @@ function mapProductToForm(producto: Producto): ProductFormState {
       ? producto.clave_inventario
       : ""
 
+  const categoria =
+    producto.categoria === "Clasico" ||
+    producto.categoria === "Combo" ||
+    producto.categoria === "Extra"
+      ? producto.categoria
+      : "Clasico"
+
+  const validSubcategories = SUBCATEGORY_OPTIONS[categoria]
+  const subcategoria =
+    validSubcategories.find((option) => option.value === producto.subcategoria)?.value ??
+    validSubcategories[0]?.value ??
+    ""
+
   return {
     nombre: producto.nombre,
     descripcion: producto.descripcion ?? "",
     precio: producto.precio.toString(),
-    categoria: producto.categoria ?? "Clasico",
+    categoria,
+    subcategoria,
     claveInventario,
     requiereVariante34: producto.requiere_variante_3_4 ?? false,
   }
@@ -74,6 +126,7 @@ export function ProductCatalogManager() {
         .from("productos")
         .select("*")
         .order("categoria", { ascending: true })
+        .order("subcategoria", { ascending: true })
         .order("nombre", { ascending: true })
 
       if (error) {
@@ -95,11 +148,7 @@ export function ProductCatalogManager() {
       setAdminAccess(access)
     } catch (error) {
       console.error("Error al validar acceso admin:", error)
-      setAdminAccess({
-        isAuthenticated: false,
-        isAdmin: false,
-        email: null,
-      })
+      setAdminAccess({ isAuthenticated: false, isAdmin: false, email: null })
     }
   }
 
@@ -108,14 +157,19 @@ export function ProductCatalogManager() {
     void loadAdminState()
   }, [])
 
-  function handleFormChange<K extends keyof ProductFormState>(
-    field: K,
-    value: ProductFormState[K],
-  ) {
+  function handleFormChange<K extends keyof ProductFormState>(field: K, value: ProductFormState[K]) {
     setForm((currentForm) => {
       const nextForm = {
         ...currentForm,
         [field]: value,
+      }
+
+      if (field === "categoria") {
+        nextForm.subcategoria = SUBCATEGORY_OPTIONS[value as ProductoCategoria][0]?.value ?? ""
+        if (value === "Extra") {
+          nextForm.claveInventario = ""
+          nextForm.requiereVariante34 = false
+        }
       }
 
       if (field === "claveInventario") {
@@ -154,10 +208,8 @@ export function ProductCatalogManager() {
 
     const nombre = form.nombre.trim()
     const descripcion = form.descripcion.trim()
-    const categoria = form.categoria.trim()
     const precio = Number(form.precio)
-    const requiereVariante34 =
-      form.claveInventario === "3/4_pollo" ? true : form.requiereVariante34
+    const requiereVariante34 = form.claveInventario === "3/4_pollo" ? true : form.requiereVariante34
 
     if (!nombre) {
       toast.error("Ingresa el nombre del producto")
@@ -180,21 +232,20 @@ export function ProductCatalogManager() {
             p_descripcion?: string | null
             p_precio?: number | null
             p_categoria?: string | null
+            p_subcategoria?: string | null
             p_clave_inventario?: string | null
             p_requiere_variante_3_4?: boolean | null
           },
-        ) => Promise<{
-          data: Producto | null
-          error: Error | null
-        }>
+        ) => Promise<{ data: Producto | null; error: Error | null }>
       }).rpc("guardar_producto_admin", {
         p_producto_id: editingProductId,
         p_nombre: nombre,
         p_descripcion: descripcion || null,
         p_precio: precio,
-        p_categoria: categoria || null,
-        p_clave_inventario: form.claveInventario || null,
-        p_requiere_variante_3_4: requiereVariante34,
+        p_categoria: form.categoria,
+        p_subcategoria: form.subcategoria || null,
+        p_clave_inventario: form.categoria === "Extra" ? null : form.claveInventario || null,
+        p_requiere_variante_3_4: form.categoria === "Extra" ? false : requiereVariante34,
       })
 
       if (error) {
@@ -202,7 +253,6 @@ export function ProductCatalogManager() {
       }
 
       toast.success(editingProductId ? "Producto actualizado" : "Producto creado")
-
       handleResetForm()
       await loadProductos()
     } catch (error) {
@@ -219,15 +269,9 @@ export function ProductCatalogManager() {
     <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-            Catalogo
-          </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">
-            Productos
-          </h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Administra precios, descripcion y reglas de inventario del menu.
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Catalogo</p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Productos</h2>
+          <p className="mt-2 text-sm text-slate-500">Administra precios, categoria visual y reglas de inventario del menu.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -239,9 +283,7 @@ export function ProductCatalogManager() {
                   ? "Usuario sin permisos admin"
                   : "Admin requiere sesion"}
             </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {adminAccess.email ?? "No hay sesion iniciada"}
-            </p>
+            <p className="mt-1 text-xs text-slate-500">{adminAccess.email ?? "No hay sesion iniciada"}</p>
           </div>
 
           <button
@@ -286,38 +328,24 @@ export function ProductCatalogManager() {
 
           <div className="mt-5 space-y-4">
             <div>
-              <label
-                htmlFor="product-name"
-                className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-              >
-                Nombre
-              </label>
+              <label htmlFor="product-name" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Nombre</label>
               <input
                 id="product-name"
                 type="text"
                 value={form.nombre}
-                onChange={(event) =>
-                  handleFormChange("nombre", event.target.value)
-                }
+                onChange={(event) => handleFormChange("nombre", event.target.value)}
                 disabled={!canManageProducts}
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-lg font-semibold text-slate-900 outline-none transition focus:border-slate-400"
               />
             </div>
 
             <div>
-              <label
-                htmlFor="product-description"
-                className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-              >
-                Descripcion
-              </label>
+              <label htmlFor="product-description" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Descripcion</label>
               <textarea
                 id="product-description"
                 rows={3}
                 value={form.descripcion}
-                onChange={(event) =>
-                  handleFormChange("descripcion", event.target.value)
-                }
+                onChange={(event) => handleFormChange("descripcion", event.target.value)}
                 disabled={!canManageProducts}
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 outline-none transition focus:border-slate-400"
               />
@@ -325,89 +353,75 @@ export function ProductCatalogManager() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label
-                  htmlFor="product-price"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Precio
-                </label>
+                <label htmlFor="product-price" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Precio</label>
                 <input
                   id="product-price"
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.precio}
-                  onChange={(event) =>
-                    handleFormChange("precio", event.target.value)
-                  }
+                  onChange={(event) => handleFormChange("precio", event.target.value)}
                   disabled={!canManageProducts}
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-lg font-semibold text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="product-category"
-                  className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Categoria
-                </label>
-                <input
+                <label htmlFor="product-category" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Categoria visual</label>
+                <select
                   id="product-category"
-                  type="text"
                   value={form.categoria}
-                  onChange={(event) =>
-                    handleFormChange("categoria", event.target.value)
-                  }
+                  onChange={(event) => handleFormChange("categoria", event.target.value as ProductoCategoria)}
                   disabled={!canManageProducts}
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-lg font-semibold text-slate-900 outline-none transition focus:border-slate-400"
-                />
+                >
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
             <div>
-              <label
-                htmlFor="inventory-key"
-                className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
-              >
-                Clave de inventario
-              </label>
+              <label htmlFor="product-subcategory" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Subcategoria</label>
               <select
-                id="inventory-key"
-                value={form.claveInventario}
-                onChange={(event) =>
-                  handleFormChange(
-                    "claveInventario",
-                    event.target.value as ProductFormState["claveInventario"],
-                  )
-                }
+                id="product-subcategory"
+                value={form.subcategoria}
+                onChange={(event) => handleFormChange("subcategoria", event.target.value as ProductoSubcategoria)}
                 disabled={!canManageProducts}
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
               >
+                {SUBCATEGORY_OPTIONS[form.categoria].map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="inventory-key" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Clave de inventario</label>
+              <select
+                id="inventory-key"
+                value={form.claveInventario}
+                onChange={(event) => handleFormChange("claveInventario", event.target.value as ProductFormState["claveInventario"])}
+                disabled={!canManageProducts || form.categoria === "Extra"}
+                className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+              >
                 {INVENTORY_OPTIONS.map((option) => (
-                  <option key={option.value || "none"} value={option.value}>
-                    {option.label}
-                  </option>
+                  <option key={option.value || "none"} value={option.value}>{option.label}</option>
                 ))}
               </select>
             </div>
 
             <label className="flex items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white px-5 py-4">
               <div>
-                <p className="text-sm font-bold text-slate-900">
-                  Requiere variante de 3/4
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Activalo solo para productos que obligan elegir combinacion.
-                </p>
+                <p className="text-sm font-bold text-slate-900">Requiere variante de 3/4</p>
+                <p className="mt-1 text-xs text-slate-500">Activalo solo para productos que obligan elegir combinacion.</p>
               </div>
               <input
                 type="checkbox"
                 checked={form.requiereVariante34}
-                onChange={(event) =>
-                  handleFormChange("requiereVariante34", event.target.checked)
-                }
-                disabled={!canManageProducts || form.claveInventario === "3/4_pollo"}
+                onChange={(event) => handleFormChange("requiereVariante34", event.target.checked)}
+                disabled={!canManageProducts || form.categoria === "Extra" || form.claveInventario === "3/4_pollo"}
                 className="h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-300"
               />
             </label>
@@ -419,21 +433,13 @@ export function ProductCatalogManager() {
             disabled={!canManageProducts || isSaving}
             className="mt-6 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
           >
-            {isSaving
-              ? "Guardando..."
-              : editingProductId
-                ? "Actualizar producto"
-                : "Guardar producto"}
+            {isSaving ? "Guardando..." : editingProductId ? "Actualizar producto" : "Guardar producto"}
           </button>
         </article>
 
         <article className="rounded-[2rem] bg-slate-50 p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Catalogo actual
-          </p>
-          <h3 className="mt-2 text-2xl font-black text-slate-900">
-            Productos registrados
-          </h3>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Catalogo actual</p>
+          <h3 className="mt-2 text-2xl font-black text-slate-900">Productos registrados</h3>
 
           <div className="mt-5 space-y-3">
             {isLoading ? (
@@ -446,16 +452,18 @@ export function ProductCatalogManager() {
               </div>
             ) : (
               productos.map((producto) => (
-                <article
-                  key={producto.id}
-                  className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
+                <article key={producto.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex flex-wrap gap-2">
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-slate-600">
-                          {producto.categoria ?? "Sin categoria"}
+                          {getCategoryLabel(producto.categoria)}
                         </span>
+                        {producto.subcategoria ? (
+                          <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-indigo-700">
+                            {getSubcategoryLabel(producto.subcategoria)}
+                          </span>
+                        ) : null}
                         {producto.clave_inventario ? (
                           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
                             {producto.clave_inventario}
@@ -468,18 +476,12 @@ export function ProductCatalogManager() {
                         ) : null}
                       </div>
 
-                      <h4 className="mt-3 text-lg font-black text-slate-900">
-                        {producto.nombre}
-                      </h4>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {producto.descripcion || "Sin descripcion"}
-                      </p>
+                      <h4 className="mt-3 text-lg font-black text-slate-900">{producto.nombre}</h4>
+                      <p className="mt-1 text-sm text-slate-500">{producto.descripcion || "Sin descripcion"}</p>
                     </div>
 
                     <div className="shrink-0 text-right">
-                      <p className="text-lg font-black text-slate-900">
-                        ${producto.precio}
-                      </p>
+                      <p className="text-lg font-black text-slate-900">${producto.precio}</p>
                       <button
                         type="button"
                         onClick={() => handleEditProduct(producto)}

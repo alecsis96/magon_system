@@ -11,6 +11,19 @@ type PushTokenRow = {
 }
 
 export async function sendDispatchPushNotification(payload: PushPayload) {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    throw sessionError
+  }
+
+  if (!session?.access_token) {
+    throw new Error("Debes iniciar sesion como administrador para enviar notificaciones")
+  }
+
   const { data, error } = await supabase
     .from("repartidor_push_tokens")
     .select("expo_push_token")
@@ -44,6 +57,7 @@ export async function sendDispatchPushNotification(payload: PushPayload) {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      Authorization: `Bearer ${session.access_token}`,
     },
     body: JSON.stringify({ messages }),
   })

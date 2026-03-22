@@ -2,7 +2,7 @@
 import { Toaster, toast } from "react-hot-toast"
 import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
-import { CustomerDirectoryAudit } from "./components/CustomerDirectoryAudit"
+import { AdminClientes } from "./components/AdminClientes"
 import { CustomerSelector } from "./components/CustomerSelector"
 import { InventoryManager } from "./components/InventoryManager"
 import { OrdersMonitor } from "./components/OrdersMonitor"
@@ -799,7 +799,7 @@ function App() {
           <OrdersMonitor />
         ) : activeTab === "CLIENTES" ? (
           <div className="-mx-4 -mb-4 sm:-mx-6">
-            <CustomerDirectoryAudit />
+            <AdminClientes />
           </div>
         ) : activeTab === "INVENTARIO" ? (
           <InventoryManager />

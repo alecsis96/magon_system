@@ -93,6 +93,18 @@ function replaceClient(currentClients: Cliente[], updatedClient: Cliente) {
   )
 }
 
+function formatCoordinate(value: number | null) {
+  if (value === null || Number.isNaN(value)) {
+    return "Sin coordenada"
+  }
+
+  return value.toFixed(6)
+}
+
+function hasCoordinates(cliente: Cliente) {
+  return cliente.latitud !== null && cliente.longitud !== null
+}
+
 function AlertTriangleIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -112,6 +124,45 @@ function AlertTriangleIcon({ className }: { className?: string }) {
   )
 }
 
+function MapPinIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M12 21s-6-5.686-6-11a6 6 0 1 1 12 0c0 5.314-6 11-6 11Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  )
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  )
+}
+
 export function CustomerDirectoryAudit() {
   const [searchQuery, setSearchQuery] = useState("")
   const [clients, setClients] = useState<Cliente[]>([])
@@ -121,6 +172,7 @@ export function CustomerDirectoryAudit() {
   const [formData, setFormData] = useState<CustomerFormData>(EMPTY_FORM)
   const [isSaving, setIsSaving] = useState(false)
   const [isFlaggingPhoto, setIsFlaggingPhoto] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [modalError, setModalError] = useState<string | null>(null)
   const [keyboardInset, setKeyboardInset] = useState(0)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
@@ -246,6 +298,16 @@ export function CustomerDirectoryAudit() {
     setSelectedClient(null)
     setModalError(null)
     setKeyboardInset(0)
+    setImageLoadFailed(false)
+  }
+
+  function handleOpenGoogleMaps() {
+    if (!selectedClient || !hasCoordinates(selectedClient)) {
+      return
+    }
+
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${selectedClient.latitud},${selectedClient.longitud}`
+    window.open(googleMapsUrl, "_blank", "noopener,noreferrer")
   }
 
   async function handleMarkPhotoForRepeat() {
@@ -273,12 +335,52 @@ export function CustomerDirectoryAudit() {
       setClients((currentClients) => replaceClient(currentClients, updatedClient))
       toast.success("La foto quedo marcada para repetir.")
     } catch (error) {
-      console.error("Error al marcar foto para repetir:", error)
+      console.error("Error al solicitar nueva foto:", error)
       const message = getErrorMessage(error)
       setModalError(message)
       toast.error(message)
     } finally {
       setIsFlaggingPhoto(false)
+    }
+  }
+
+  async function handleDeleteClient() {
+    if (!selectedClient || isDeleting) {
+      return
+    }
+
+    const confirmationMessage = `¿Estás seguro? Esta acción es IRREVERSIBLE y borrará todo el historial operativo de ${selectedClient.nombre}.`
+    const isConfirmed = window.confirm(confirmationMessage)
+
+    if (!isConfirmed) {
+      return
+    }
+
+    try {
+      setIsDeleting(true)
+      setModalError(null)
+
+      const { error } = await supabase
+        .from("clientes")
+        .delete()
+        .eq("id", selectedClient.id)
+
+      if (error) {
+        throw error
+      }
+
+      setClients((currentClients) =>
+        currentClients.filter((client) => client.id !== selectedClient.id),
+      )
+      setSelectedClient(null)
+      toast.success("Cliente eliminado permanentemente.")
+    } catch (error) {
+      console.error("Error al eliminar cliente:", error)
+      const message = getErrorMessage(error)
+      setModalError(message)
+      toast.error(message)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -406,21 +508,12 @@ export function CustomerDirectoryAudit() {
       {selectedClient ? (
         <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
           <div
-            className="min-h-full bg-white pb-32"
+            className="min-h-full bg-white pb-40"
             style={{
-              paddingBottom: `${160 + keyboardInset}px`,
+              paddingBottom: `${188 + keyboardInset}px`,
             }}
           >
             <div className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Directorio y auditoria
-                </p>
-                <h2 className="mt-1 text-lg font-bold text-slate-900">
-                  {selectedClient.nombre}
-                </h2>
-              </div>
-
               <button
                 type="button"
                 onClick={handleCloseClient}
@@ -428,46 +521,93 @@ export function CustomerDirectoryAudit() {
               >
                 Volver
               </button>
+
+              <h2 className="text-base font-black text-slate-900">
+                Auditoria de cliente
+              </h2>
+
+              <div className="w-20" aria-hidden="true" />
             </div>
 
-            {selectedClientHasFacade && !imageLoadFailed ? (
-              <img
-                src={selectedClient.url_foto_fachada ?? ""}
-                alt={`Fachada de ${selectedClient.nombre}`}
-                className="h-48 w-full object-cover"
-                onError={() => setImageLoadFailed(true)}
-              />
-            ) : (
-              <div className="flex h-48 w-full items-center justify-center bg-slate-200 px-6 text-center text-sm font-medium text-slate-600">
-                Foto de fachada no disponible o marcada como invalida.
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-2 p-2">
+              <article className="overflow-hidden rounded-3xl bg-slate-100 shadow-sm ring-1 ring-slate-200">
+                <div className="h-32 bg-slate-200">
+                  {selectedClientHasFacade && !imageLoadFailed ? (
+                    <img
+                      src={selectedClient.url_foto_fachada ?? ""}
+                      alt={`Fachada de ${selectedClient.nombre}`}
+                      className="h-full w-full object-cover"
+                      onError={() => setImageLoadFailed(true)}
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-4 text-center text-xs font-medium text-slate-600">
+                      Fachada no disponible
+                    </div>
+                  )}
+                </div>
 
-            <div className="px-4 pt-4">
+                <div className="p-3">
+                  <button
+                    type="button"
+                    onClick={handleMarkPhotoForRepeat}
+                    disabled={isFlaggingPhoto || selectedClient.foto_valida === false}
+                    className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    {selectedClient.foto_valida === false
+                      ? "Foto ya solicitada"
+                      : isFlaggingPhoto
+                        ? "Solicitando..."
+                        : "Solicitar Nueva Foto"}
+                  </button>
+                </div>
+              </article>
+
+              <article className="overflow-hidden rounded-3xl bg-slate-100 shadow-sm ring-1 ring-slate-200">
+                <div className="relative flex h-32 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,#dbeafe,transparent_55%),linear-gradient(135deg,#e2e8f0,#f8fafc)]">
+                  <div className="absolute inset-0 opacity-50 [background-image:linear-gradient(to_right,rgba(148,163,184,0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.18)_1px,transparent_1px)] [background-size:20px_20px]" />
+                  <div className="relative z-10 flex flex-col items-center justify-center text-rose-600">
+                    <MapPinIcon className="h-8 w-8" />
+                    <span className="mt-2 rounded-full bg-white/80 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                      {hasCoordinates(selectedClient)
+                        ? "Ubicacion capturada"
+                        : "Sin ubicacion"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Coordenadas
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {formatCoordinate(selectedClient.latitud)},{" "}
+                    {formatCoordinate(selectedClient.longitud)}
+                  </p>
+                </div>
+              </article>
+            </div>
+
+            <div className="px-4 pt-2">
               <button
                 type="button"
-                onClick={handleMarkPhotoForRepeat}
-                disabled={isFlaggingPhoto || selectedClient.foto_valida === false}
-                className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-base font-semibold text-amber-800 transition hover:bg-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                onClick={handleOpenGoogleMaps}
+                disabled={!hasCoordinates(selectedClient)}
+                className="w-full rounded-2xl bg-slate-900 px-4 py-4 text-base font-semibold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
               >
-                {selectedClient.foto_valida === false
-                  ? "Foto marcada para repetir"
-                  : isFlaggingPhoto
-                    ? "Marcando foto..."
-                    : "Marcar foto para repetir"}
+                Abrir en Google Maps
               </button>
             </div>
 
             <form className="space-y-4 px-4 pt-4">
               <div>
                 <label
-                  htmlFor="customer-audit-name"
+                  htmlFor="admin-clientes-name"
                   className="mb-2 block text-sm font-semibold text-slate-600"
                 >
                   Nombre
                 </label>
                 <input
-                  id="customer-audit-name"
+                  id="admin-clientes-name"
                   type="text"
                   value={formData.nombre}
                   onChange={(event) => handleFormChange("nombre", event.target.value)}
@@ -477,13 +617,13 @@ export function CustomerDirectoryAudit() {
 
               <div>
                 <label
-                  htmlFor="customer-audit-phone"
+                  htmlFor="admin-clientes-phone"
                   className="mb-2 block text-sm font-semibold text-slate-600"
                 >
                   Telefono
                 </label>
                 <input
-                  id="customer-audit-phone"
+                  id="admin-clientes-phone"
                   type="tel"
                   inputMode="tel"
                   value={formData.telefono}
@@ -496,13 +636,13 @@ export function CustomerDirectoryAudit() {
 
               <div>
                 <label
-                  htmlFor="customer-audit-address"
+                  htmlFor="admin-clientes-address"
                   className="mb-2 block text-sm font-semibold text-slate-600"
                 >
-                  Direccion Habitual
+                  Direccion
                 </label>
                 <textarea
-                  id="customer-audit-address"
+                  id="admin-clientes-address"
                   rows={4}
                   value={formData.direccionHabitual}
                   onChange={(event) =>
@@ -514,13 +654,13 @@ export function CustomerDirectoryAudit() {
 
               <div>
                 <label
-                  htmlFor="customer-audit-references"
+                  htmlFor="admin-clientes-references"
                   className="mb-2 block text-sm font-semibold text-slate-600"
                 >
                   Referencias
                 </label>
                 <textarea
-                  id="customer-audit-references"
+                  id="admin-clientes-references"
                   rows={4}
                   value={formData.referencias}
                   onChange={(event) =>
@@ -529,8 +669,65 @@ export function CustomerDirectoryAudit() {
                   className="w-full rounded-2xl border border-slate-200 p-4 text-lg text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label
+                    htmlFor="admin-clientes-latitude"
+                    className="mb-2 block text-sm font-semibold text-slate-600"
+                  >
+                    Latitud
+                  </label>
+                  <input
+                    id="admin-clientes-latitude"
+                    type="text"
+                    value={formatCoordinate(selectedClient.latitud)}
+                    readOnly
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-100 p-4 text-lg text-slate-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-clientes-longitude"
+                    className="mb-2 block text-sm font-semibold text-slate-600"
+                  >
+                    Longitud
+                  </label>
+                  <input
+                    id="admin-clientes-longitude"
+                    type="text"
+                    value={formatCoordinate(selectedClient.longitud)}
+                    readOnly
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-100 p-4 text-lg text-slate-500 outline-none"
+                  />
+                </div>
+              </div>
             </form>
 
+            <section className="px-4 pt-5">
+              <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-rose-700">
+                  Zona de Peligro
+                </p>
+                <p className="mt-2 text-sm text-rose-700">
+                  Esta accion elimina al cliente y su historial operativo asociado.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDeleteClient}
+                  disabled={isDeleting}
+                  className="mt-4 flex w-full items-center justify-center gap-3 rounded-2xl bg-rose-600 px-4 py-4 text-base font-black uppercase tracking-[0.08em] text-white shadow-[0_12px_30px_rgba(225,29,72,0.28)] transition hover:bg-rose-500 focus:outline-none focus:ring-4 focus:ring-rose-200 disabled:cursor-not-allowed disabled:bg-rose-300 disabled:shadow-none"
+                >
+                  <TrashIcon className="h-5 w-5" />
+                  <span>
+                    {isDeleting
+                      ? "Eliminando cliente..."
+                      : "ELIMINAR CLIENTE PERMANENTEMENTE"}
+                  </span>
+                </button>
+              </div>
+            </section>
             {modalError ? (
               <div className="px-4 pt-4">
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -550,7 +747,7 @@ export function CustomerDirectoryAudit() {
             <button
               type="button"
               onClick={handleSaveChanges}
-              disabled={isSaving}
+              disabled={isSaving || isDeleting}
               className="w-full rounded-2xl bg-gray-900 py-4 text-lg font-semibold text-white focus:outline-none focus:ring-4 focus:ring-white/20 disabled:cursor-not-allowed disabled:text-slate-400"
             >
               {isSaving ? "Guardando..." : "Guardar Cambios"}

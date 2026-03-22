@@ -61,8 +61,11 @@ export interface Cliente extends Record<string, unknown> {
   telefono: string;
   nombre: string;
   url_foto_fachada: string | null;
+  foto_valida: boolean;
   latitud: number | null;
   longitud: number | null;
+  direccion_habitual: string | null;
+  referencias: string | null;
   notas_entrega: string | null;
 }
 export interface ClienteInsert extends Record<string, unknown> {
@@ -70,8 +73,11 @@ export interface ClienteInsert extends Record<string, unknown> {
   telefono: string;
   nombre: string;
   url_foto_fachada?: string | null;
+  foto_valida?: boolean;
   latitud?: number | null;
   longitud?: number | null;
+  direccion_habitual?: string | null;
+  referencias?: string | null;
   notas_entrega?: string | null;
 }
 export interface ClienteUpdate extends Record<string, unknown> {
@@ -79,8 +85,11 @@ export interface ClienteUpdate extends Record<string, unknown> {
   telefono?: string;
   nombre?: string;
   url_foto_fachada?: string | null;
+  foto_valida?: boolean;
   latitud?: number | null;
   longitud?: number | null;
+  direccion_habitual?: string | null;
+  referencias?: string | null;
   notas_entrega?: string | null;
 }
 export interface InventarioDiario extends Record<string, unknown> {
@@ -461,4 +470,3 @@ export interface Database {
     CompositeTypes: Record<string, never>;
   };
 }
-

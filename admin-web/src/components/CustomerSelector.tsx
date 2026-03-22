@@ -42,7 +42,10 @@ function getErrorMessage(error: unknown) {
 function mapClienteToDisplayCustomer(cliente: Cliente): DisplayCustomer {
   return {
     cliente,
-    direccion: cliente.notas_entrega ?? "Sin direccion registrada",
+    direccion:
+      cliente.direccion_habitual ??
+      cliente.notas_entrega ??
+      "Sin direccion registrada",
   }
 }
 
@@ -252,6 +255,7 @@ export function CustomerSelector({
         .insert({
           telefono,
           nombre: nombreCompleto,
+          direccion_habitual: direccion,
           notas_entrega: direccion,
         })
         .select()

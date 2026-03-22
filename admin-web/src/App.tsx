@@ -2,6 +2,7 @@
 import { Toaster, toast } from "react-hot-toast"
 import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
+import { CustomerDirectoryAudit } from "./components/CustomerDirectoryAudit"
 import { CustomerSelector } from "./components/CustomerSelector"
 import { InventoryManager } from "./components/InventoryManager"
 import { OrdersMonitor } from "./components/OrdersMonitor"
@@ -183,7 +184,7 @@ function getErrorMessage(error: unknown) {
 
 function App() {
   const [activeTab, setActiveTab] = useState<
-    "POS" | "MONITOR" | "INVENTARIO" | "PRODUCTOS" | "CONTABILIDAD"
+    "POS" | "MONITOR" | "INVENTARIO" | "PRODUCTOS" | "CONTABILIDAD" | "CLIENTES"
   >("POS")
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
@@ -422,7 +423,8 @@ function App() {
             className={`shrink-0 rounded-2xl px-4 py-3 text-sm font-black transition focus:outline-none focus:ring-4 ${
               activeTab === "INVENTARIO" ||
               activeTab === "PRODUCTOS" ||
-              activeTab === "CONTABILIDAD"
+              activeTab === "CONTABILIDAD" ||
+              activeTab === "CLIENTES"
                 ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] focus:ring-slate-200"
                 : "bg-slate-50 text-slate-700 hover:bg-slate-100 focus:ring-slate-100"
             }`}
@@ -438,6 +440,7 @@ function App() {
                 { id: "INVENTARIO", label: "Inventario" },
                 { id: "PRODUCTOS", label: "Productos" },
                 { id: "CONTABILIDAD", label: "Contabilidad" },
+                { id: "CLIENTES", label: "Clientes" },
               ] as const).map((tab) => {
                 const isActive = activeTab === tab.id
 
@@ -794,6 +797,10 @@ function App() {
           </>
         ) : activeTab === "MONITOR" ? (
           <OrdersMonitor />
+        ) : activeTab === "CLIENTES" ? (
+          <div className="-mx-4 -mb-4 sm:-mx-6">
+            <CustomerDirectoryAudit />
+          </div>
         ) : activeTab === "INVENTARIO" ? (
           <InventoryManager />
         ) : activeTab === "CONTABILIDAD" ? (

@@ -3,6 +3,7 @@ import { Toaster, toast } from "react-hot-toast"
 import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
 import { AdminClientes } from "./components/AdminClientes"
+import { OptionalCheckoutCustomerPicker } from "./components/OptionalCheckoutCustomerPicker"
 import { CustomerSelector } from "./components/CustomerSelector"
 import { InventoryManager } from "./components/InventoryManager"
 import { OrdersMonitor } from "./components/OrdersMonitor"
@@ -532,11 +533,56 @@ function App() {
                   </div>
 
                   <div className="flex flex-1 flex-col">
-                    <CustomerSelector
-                      onCustomerSelect={setSelectedCustomer}
-                      tipoPedido={tipoPedido}
-                      onTipoPedidoChange={setTipoPedido}
-                    />
+                    {tipoPedido === "domicilio" ? (
+                      <CustomerSelector
+                        onCustomerSelect={setSelectedCustomer}
+                        tipoPedido={tipoPedido}
+                        onTipoPedidoChange={setTipoPedido}
+                      />
+                    ) : (
+                      <section className="space-y-4">
+                        <div className="rounded-[1.75rem] bg-slate-50 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 sm:p-5">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                              Tipo de pedido
+                            </p>
+                            <h2 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
+                              Cliente y entrega
+                            </h2>
+                          </div>
+                          <div className="mt-4 rounded-[1.4rem] bg-white p-1.5 ring-1 ring-slate-200">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {(["mostrador", "domicilio"] as const).map((tipo) => {
+                                const isActive = tipoPedido === tipo
+
+                                return (
+                                  <button
+                                    key={tipo}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedCustomer(null)
+                                      setTipoPedido(tipo)
+                                    }}
+                                    className={`min-w-0 rounded-[1.2rem] px-3 py-3 text-center text-sm font-bold capitalize transition sm:px-5 ${
+                                      isActive
+                                        ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.18)]"
+                                        : "text-slate-500 hover:bg-white hover:text-slate-900"
+                                    }`}
+                                  >
+                                    <span className="block truncate">{tipo}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <OptionalCheckoutCustomerPicker
+                          selectedCustomer={selectedCustomer}
+                          onCustomerSelect={setSelectedCustomer}
+                        />
+                      </section>
+                    )}
 
                     <div className="mt-4 border-b border-dashed border-slate-200 pb-4">
                       <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">

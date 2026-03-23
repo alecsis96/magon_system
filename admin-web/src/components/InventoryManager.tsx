@@ -912,8 +912,12 @@ export function InventoryManager() {
             Inventario diario
           </p>
           <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-            Apertura de turno
+            Registro opcional del dia
           </h2>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600">
+            Las ventas ya no dependen de iniciar inventario. Si hoy llega pollo, registralo aqui.
+            Si no llega producto nuevo, puedes dejar este paso pendiente y vender normalmente.
+          </p>
           <p className="mt-5 text-2xl font-black text-amber-600 sm:text-3xl">
             Stock sobrante de ayer: {formatMetric(stockAnterior)} pollos
           </p>
@@ -922,7 +926,7 @@ export function InventoryManager() {
               htmlFor="nuevos-ingresos"
               className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
             >
-              Cuantos pollos frescos llegaron hoy? (Ej. 10, 15, 20)
+              Cuantos pollos frescos llegaron hoy? (Opcional)
             </label>
             <input
               id="nuevos-ingresos"
@@ -940,7 +944,7 @@ export function InventoryManager() {
             disabled={isStartingDay}
             className="mt-5 w-full rounded-3xl bg-slate-900 px-6 py-4 text-base font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none sm:py-5 sm:text-lg"
           >
-            {isStartingDay ? "Iniciando dia..." : "Iniciar Dia"}
+            {isStartingDay ? "Guardando inventario..." : "Guardar inventario de hoy"}
           </button>
         </div>
       </section>

@@ -360,13 +360,7 @@ function App() {
       showSaleSuccessToast(total, piezasInventario)
     } catch (error) {
       console.error("Error al registrar la venta:", error)
-      const errorMessage = getErrorMessage(error)
-
-      toast.error(
-        errorMessage === "Inventario de hoy no iniciado"
-          ? "Primero debes iniciar el inventario del dia en la pestaña Inventario"
-          : errorMessage,
-      )
+      toast.error(getErrorMessage(error))
     } finally {
       setIsCheckingOut(false)
     }

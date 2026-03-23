@@ -349,7 +349,7 @@ export function CustomerDirectoryAudit() {
       return
     }
 
-    const confirmationMessage = `¿Estás seguro? Esta acción es IRREVERSIBLE y borrará todo el historial operativo de ${selectedClient.nombre}.`
+    const confirmationMessage = `\u00BFEst\u00E1s seguro? Esta acci\u00F3n es IRREVERSIBLE y borrar\u00E1 todo el historial operativo de ${selectedClient.nombre}.`
     const isConfirmed = window.confirm(confirmationMessage)
 
     if (!isConfirmed) {
@@ -360,13 +360,21 @@ export function CustomerDirectoryAudit() {
       setIsDeleting(true)
       setModalError(null)
 
-      const { error } = await supabase
-        .from("clientes")
-        .delete()
-        .eq("id", selectedClient.id)
+      const { data, error } = await (supabase as typeof supabase & {
+        rpc: (
+          fn: "eliminar_cliente_admin",
+          args: { p_cliente_id: string },
+        ) => Promise<{ data: string | null; error: Error | null }>
+      }).rpc("eliminar_cliente_admin", {
+        p_cliente_id: selectedClient.id,
+      })
 
       if (error) {
         throw error
+      }
+
+      if (!data) {
+        throw new Error("Supabase no confirmo la eliminacion del cliente.")
       }
 
       setClients((currentClients) =>

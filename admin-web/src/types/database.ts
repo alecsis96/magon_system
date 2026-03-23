@@ -452,6 +452,12 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      eliminar_cliente_admin: {
+        Args: {
+          p_cliente_id: UUID;
+        };
+        Returns: UUID;
+      };
       registrar_venta: {
         Args: {
           p_total: number;

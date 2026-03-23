@@ -10,6 +10,7 @@ import { OrdersMonitor } from "./components/OrdersMonitor"
 import { POSMenu } from "./components/POSMenu"
 import { ProductCatalogManager } from "./components/ProductCatalogManager"
 import {
+  PIECE_LABELS,
   THREE_QUARTER_VARIANTS,
   THREE_QUARTER_VARIANT_LABELS,
   getProductBreakdown,
@@ -39,6 +40,7 @@ type CartItem = {
   producto: Producto
   merma: string | null
   threeQuarterVariant: ThreeQuarterVariant | null
+  singlePieceType: InventoryPieceKey | null
 }
 
 const MERMA_OPTIONS = [
@@ -76,6 +78,12 @@ const PRODUCTO_DETALLES: Record<string, ProductoDetalle> = {
     desglose: null,
     mermaOptions: MERMA_OPTIONS,
   },
+  "1_PIEZA": {
+    piezasInventario: 1,
+    pollosEquivalentes: 0.1,
+    desglose: "Descuenta 0.1 pollo del inventario principal",
+    mermaOptions: MERMA_OPTIONS,
+  },
   combo_papas: {
     piezasInventario: 10,
     pollosEquivalentes: 1,
@@ -104,6 +112,10 @@ function isThreeQuarterProduct(producto: Producto) {
   )
 }
 
+function isSinglePieceProduct(producto: Producto) {
+  return resolveInventoryProductKey(producto) === "1_PIEZA"
+}
+
 function createEmptyPieceBreakdown(): PieceBreakdown {
   return {
     alas: 0,
@@ -121,6 +133,17 @@ function getCartItemBreakdown(item: CartItem) {
     }
 
     return THREE_QUARTER_VARIANTS[item.threeQuarterVariant]
+  }
+
+  if (isSinglePieceProduct(item.producto)) {
+    if (!item.singlePieceType) {
+      return createEmptyPieceBreakdown()
+    }
+
+    return {
+      ...createEmptyPieceBreakdown(),
+      [item.singlePieceType]: 1,
+    }
   }
 
   return getProductBreakdown(item.producto)
@@ -222,6 +245,7 @@ function App() {
         threeQuarterVariant: isThreeQuarterProduct(producto)
           ? "ala_pechuga"
           : null,
+        singlePieceType: null,
       },
     ])
   }
@@ -244,6 +268,19 @@ function App() {
       currentCart.map((item) =>
         item.lineId === lineId
           ? { ...item, threeQuarterVariant: variant }
+          : item,
+      ),
+    )
+  }
+
+  function handleSinglePieceTypeChange(
+    lineId: string,
+    pieceType: InventoryPieceKey,
+  ) {
+    setCart((currentCart) =>
+      currentCart.map((item) =>
+        item.lineId === lineId
+          ? { ...item, singlePieceType: pieceType }
           : item,
       ),
     )
@@ -315,6 +352,15 @@ function App() {
       return
     }
 
+    if (
+      cart.some(
+        (item) => isSinglePieceProduct(item.producto) && !item.singlePieceType,
+      )
+    ) {
+      toast.error("Selecciona la pieza de cada producto marcado como 1 Pieza")
+      return
+    }
+
     if (tipoPedido === "domicilio" && !selectedCustomer) {
       toast.error("Selecciona un cliente para pedidos a domicilio")
       return
@@ -376,9 +422,13 @@ function App() {
 
     return currentTotal + detalle.piezasInventario + (item.merma ? 1 : 0)
   }, 0)
+  const hasPendingSinglePieceSelection = cart.some(
+    (item) => isSinglePieceProduct(item.producto) && !item.singlePieceType,
+  )
   const isCheckoutDisabled =
     cart.length === 0 ||
     (tipoPedido === "domicilio" && !selectedCustomer) ||
+    hasPendingSinglePieceSelection ||
     isCheckingOut
 
   return (
@@ -599,6 +649,8 @@ function App() {
                           const showMermaPanel = openMermaItemId === item.lineId
                           const showThreeQuarterSelector =
                             isThreeQuarterProduct(item.producto)
+                          const showSinglePieceSelector =
+                            isSinglePieceProduct(item.producto)
 
                           return (
                             <article
@@ -627,6 +679,14 @@ function App() {
                                           item.threeQuarterVariant
                                         ]
                                       }
+                                    </p>
+                                  ) : null}
+                                  {showSinglePieceSelector ? (
+                                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
+                                      Pieza:{" "}
+                                      {item.singlePieceType
+                                        ? PIECE_LABELS[item.singlePieceType]
+                                        : "Pendiente por seleccionar"}
                                     </p>
                                   ) : null}
                                   {item.merma ? (
@@ -672,6 +732,42 @@ function App() {
                                             }`}
                                           >
                                             {THREE_QUARTER_VARIANT_LABELS[variant]}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {showSinglePieceSelector ? (
+                                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
+                                      Selecciona la pieza a descontar
+                                    </p>
+                                    <div className="mt-3 grid gap-2">
+                                      {(Object.keys(
+                                        PIECE_LABELS,
+                                      ) as InventoryPieceKey[]).map((pieceKey) => {
+                                        const isActive =
+                                          item.singlePieceType === pieceKey
+
+                                        return (
+                                          <button
+                                            key={pieceKey}
+                                            type="button"
+                                            onClick={() =>
+                                              handleSinglePieceTypeChange(
+                                                item.lineId,
+                                                pieceKey,
+                                              )
+                                            }
+                                            className={`rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
+                                              isActive
+                                                ? "bg-slate-900 text-white"
+                                                : "bg-white text-slate-700 ring-1 ring-sky-200 hover:bg-sky-100"
+                                            }`}
+                                          >
+                                            {PIECE_LABELS[pieceKey]}
                                           </button>
                                         )
                                       })}

@@ -14,6 +14,7 @@ export type InventoryProductKey =
   | "1_pollo"
   | "3/4_pollo"
   | "1/2_pollo"
+  | "1_PIEZA"
   | "combo_papas"
 
 export const EMPTY_PIECE_BREAKDOWN: PieceBreakdown = {
@@ -34,6 +35,7 @@ export const PRODUCTO_DESGLOSE: Record<InventoryProductKey, PieceBreakdown> = {
     pechugas_chicas: 1,
   },
   combo_papas: { ...PIEZAS_POR_POLLO },
+  "1_PIEZA": { ...EMPTY_PIECE_BREAKDOWN },
   "3/4_pollo": {
     alas: 0,
     piernas: 0,
@@ -98,9 +100,14 @@ export function resolveInventoryProductKey(product: {
     explicitInventoryKey === "1_pollo" ||
     explicitInventoryKey === "3/4_pollo" ||
     explicitInventoryKey === "1/2_pollo" ||
+    explicitInventoryKey === "1_PIEZA" ||
     explicitInventoryKey === "combo_papas"
   ) {
     return explicitInventoryKey
+  }
+
+  if (explicitInventoryKey?.toLowerCase() === "1_pieza") {
+    return "1_PIEZA"
   }
 
   const rawId = product.id
@@ -132,6 +139,14 @@ export function resolveInventoryProductKey(product: {
     combinedText.includes("medio pollo")
   ) {
     return "1/2_pollo"
+  }
+
+  if (
+    normalizedId === "1_pieza" ||
+    combinedText.includes("1 pieza") ||
+    combinedText.includes("una pieza")
+  ) {
+    return "1_PIEZA"
   }
 
   if (

@@ -4,7 +4,12 @@ import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { supabase } from "../lib/supabase"
 import type { Producto, ProductoCategoria, ProductoSubcategoria } from "../types/database"
 
-type InventoryProductKey = "1_pollo" | "3/4_pollo" | "1/2_pollo" | "combo_papas"
+type InventoryProductKey =
+  | "1_pollo"
+  | "3/4_pollo"
+  | "1/2_pollo"
+  | "1_PIEZA"
+  | "combo_papas"
 
 type ProductFormState = {
   nombre: string
@@ -52,6 +57,7 @@ const INVENTORY_OPTIONS: Array<{
   { value: "1_pollo", label: "1 Pollo" },
   { value: "3/4_pollo", label: "3/4 Pollo" },
   { value: "1/2_pollo", label: "1/2 Pollo" },
+  { value: "1_PIEZA", label: "1 Pieza" },
   { value: "combo_papas", label: "Combo Papas" },
 ]
 
@@ -78,8 +84,12 @@ function mapProductToForm(producto: Producto): ProductFormState {
     producto.clave_inventario === "1_pollo" ||
     producto.clave_inventario === "3/4_pollo" ||
     producto.clave_inventario === "1/2_pollo" ||
+    producto.clave_inventario === "1_PIEZA" ||
+    producto.clave_inventario === "1_pieza" ||
     producto.clave_inventario === "combo_papas"
-      ? producto.clave_inventario
+      ? producto.clave_inventario === "1_pieza"
+        ? "1_PIEZA"
+        : producto.clave_inventario
       : ""
 
   const categoria =

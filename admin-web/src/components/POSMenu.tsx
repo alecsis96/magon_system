@@ -67,6 +67,24 @@ function getSubcategoryBadge(producto: Producto) {
   return subcategoria.replace(/_/g, " ")
 }
 
+function getCategoryBadgeTone(producto: Producto) {
+  const filter = getProductFilter(producto)
+
+  if (filter === "pollos") {
+    return "bg-orange-50 text-orange-600"
+  }
+
+  if (filter === "combos") {
+    return "bg-sky-50 text-sky-600"
+  }
+
+  if (filter === "extras") {
+    return "bg-emerald-50 text-emerald-600"
+  }
+
+  return "bg-gray-100 text-gray-600"
+}
+
 function FilterButton({
   active,
   label,
@@ -80,10 +98,10 @@ function FilterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition sm:px-4 sm:text-xs ${
+      className={`rounded-full border px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition sm:px-4 sm:text-xs ${
         active
-          ? "bg-white text-stone-950 shadow-[0_12px_24px_rgba(255,255,255,0.16)]"
-          : "border border-white/10 bg-white/5 text-stone-300 hover:border-white/20 hover:bg-white/10"
+          ? "border-gray-900 bg-gray-900 text-white shadow-sm"
+          : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
       }`}
     >
       {label}
@@ -141,19 +159,19 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
   }
 
   return (
-    <section className="min-h-full rounded-[2rem] bg-stone-950 px-3 py-4 text-stone-50 sm:px-5 sm:py-5 lg:px-6">
+    <section className="min-h-full rounded-[2rem] bg-gray-50 px-4 py-4 text-gray-900 sm:px-5 sm:py-5 lg:px-6">
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-col gap-3 sm:mb-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-amber-400">
+              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-gray-500">
                 Punto de venta
               </p>
-              <h1 className="mt-1.5 text-xl font-black tracking-tight text-white sm:mt-2 sm:text-3xl">
+              <h1 className="mt-1.5 text-xl font-black tracking-tight text-gray-900 sm:mt-2 sm:text-3xl">
                 Menu de polleria
               </h1>
             </div>
-            <p className="max-w-lg text-[11px] text-stone-300 sm:text-sm">
+            <p className="max-w-lg text-[11px] text-gray-500 sm:text-sm">
               Selecciona un producto para agregarlo al pedido.
             </p>
           </div>
@@ -167,65 +185,54 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
         </div>
 
         {isLoading ? (
-          <div className="rounded-3xl border border-dashed border-white/20 bg-white/5 px-6 py-16 text-center text-sm font-medium text-stone-300">
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-16 text-center text-sm font-medium text-gray-500">
             Cargando menu desde Supabase...
           </div>
         ) : loadError ? (
-          <div className="rounded-3xl border border-rose-300/20 bg-rose-500/10 px-6 py-16 text-center text-sm font-medium text-rose-100">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-6 py-16 text-center text-sm font-medium text-rose-700">
             {loadError}
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-white/20 bg-white/5 px-6 py-16 text-center text-sm font-medium text-stone-300">
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-16 text-center text-sm font-medium text-gray-500">
             No hay productos disponibles en esta seccion.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {filteredProducts.map((producto) => {
-              const productFilter = getProductFilter(producto)
-              const isExtra = productFilter === "extras"
-              const isCombo = productFilter === "combos"
-              const secondaryBadge = isExtra || isCombo ? null : getSubcategoryBadge(producto)
+              const secondaryBadge = getSubcategoryBadge(producto)
 
               return (
                 <button
                   key={producto.id}
                   type="button"
                   onClick={() => handleSelectProduct(producto)}
-                  className={`group flex flex-col justify-between rounded-[1.45rem] border text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.3)] focus:outline-none focus:ring-4 active:scale-[0.98] ${
-                    isExtra
-                      ? "min-h-[124px] border-emerald-300/20 bg-gradient-to-br from-emerald-500 via-lime-500 to-amber-500 p-2.5 focus:ring-emerald-200/50 sm:min-h-[152px] sm:p-3"
-                      : isCombo
-                        ? "min-h-[150px] border-cyan-300/20 bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-700 p-2.5 focus:ring-cyan-200/50 sm:min-h-[204px] sm:p-4"
-                        : "min-h-[150px] border-amber-300/20 bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-2.5 focus:ring-amber-200/50 sm:min-h-[204px] sm:p-4"
-                  }`}
+                  className="flex min-h-[182px] flex-col justify-between rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-transform duration-150 hover:border-gray-200 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-gray-200 active:scale-95 active:bg-gray-50 sm:min-h-[206px] sm:p-5"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="rounded-full bg-white/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-white/90 sm:px-2.5 sm:text-[11px]">
+                    <span
+                      className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${getCategoryBadgeTone(producto)}`}
+                    >
                       {getCategoryBadge(producto)}
                     </span>
                     {secondaryBadge ? (
-                      <span className="rounded-full bg-stone-950/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/85 sm:text-[10px]">
+                      <span className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
                         {secondaryBadge}
-                      </span>
-                    ) : isCombo ? (
-                      <span className="rounded-full bg-stone-950/15 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/85 sm:text-[10px]">
-                        Combo
                       </span>
                     ) : null}
                   </div>
 
-                  <div className={`mt-2.5 flex flex-1 flex-col justify-between ${isExtra ? "gap-1.5" : "gap-2"}`}>
-                    <div className={isExtra ? "space-y-1.5" : "space-y-2"}>
-                      <h2 className={`line-clamp-2 font-black leading-tight text-white ${isExtra ? "min-h-[2.3rem] text-[15px] sm:min-h-[2.7rem] sm:text-lg" : "min-h-[2.5rem] text-base sm:min-h-[3.5rem] sm:text-xl"}`}>
+                  <div className="mt-4 flex flex-1 flex-col justify-between">
+                    <div>
+                      <h2 className="text-base font-semibold leading-tight text-gray-800">
                         {producto.nombre}
                       </h2>
-                      <span className={`inline-flex self-start rounded-2xl bg-stone-950/20 font-black text-white backdrop-blur-sm ${isExtra ? "px-2.5 py-1 text-[11px] sm:text-sm" : "px-2.5 py-1 text-xs sm:px-2.5 sm:py-1.5 sm:text-base"}`}>
-                        {currencyFormatter.format(producto.precio)}
-                      </span>
+                      <p className="mt-1 line-clamp-2 text-xs text-gray-500">
+                      {producto.descripcion || "Sin descripcion"}
+                      </p>
                     </div>
 
-                    <p className={`text-orange-50/90 ${isExtra ? "line-clamp-2 min-h-[1.9rem] text-[10px] leading-relaxed sm:text-xs" : "line-clamp-3 min-h-[2.9rem] text-[11px] leading-relaxed sm:min-h-[3.2rem] sm:text-sm"}`}>
-                      {producto.descripcion || "Sin descripcion"}
+                    <p className="mt-3 text-lg font-bold text-gray-900">
+                      {currencyFormatter.format(producto.precio)}
                     </p>
                   </div>
                 </button>

@@ -45,28 +45,6 @@ function getCategoryBadge(producto: Producto) {
   return producto.categoria ?? "Menu"
 }
 
-function getSubcategoryBadge(producto: Producto) {
-  const subcategoria = normalize(producto.subcategoria)
-
-  if (!subcategoria) {
-    return null
-  }
-
-  if (subcategoria === "papas_fritas") {
-    return "Papas fritas"
-  }
-
-  if (subcategoria === "pollo") {
-    return null
-  }
-
-  if (subcategoria === "combo") {
-    return null
-  }
-
-  return subcategoria.replace(/_/g, " ")
-}
-
 function getCategoryBadgeTone(producto: Producto) {
   const filter = getProductFilter(producto)
 
@@ -100,7 +78,7 @@ function FilterButton({
       onClick={onClick}
       className={`rounded-full border px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition sm:px-4 sm:text-xs ${
         active
-          ? "border-gray-900 bg-gray-900 text-white shadow-sm"
+          ? "border-gray-800 bg-gray-800 text-white shadow-sm"
           : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
       }`}
     >
@@ -199,39 +177,32 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
         ) : (
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {filteredProducts.map((producto) => {
-              const secondaryBadge = getSubcategoryBadge(producto)
-
               return (
                 <button
                   key={producto.id}
                   type="button"
                   onClick={() => handleSelectProduct(producto)}
-                  className="flex min-h-[182px] flex-col justify-between rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-transform duration-150 hover:border-gray-200 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-gray-200 active:scale-95 active:bg-gray-50 sm:min-h-[206px] sm:p-5"
+                  className="flex min-h-[182px] flex-col justify-between rounded-2xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-all duration-150 hover:border-gray-200 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-gray-200 active:scale-95 active:shadow-inner sm:min-h-[206px]"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div>
                     <span
                       className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${getCategoryBadgeTone(producto)}`}
                     >
                       {getCategoryBadge(producto)}
                     </span>
-                    {secondaryBadge ? (
-                      <span className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                        {secondaryBadge}
-                      </span>
-                    ) : null}
                   </div>
 
                   <div className="mt-4 flex flex-1 flex-col justify-between">
                     <div>
-                      <h2 className="text-base font-semibold leading-tight text-gray-800">
+                      <h2 className="text-lg font-semibold leading-tight text-gray-900">
                         {producto.nombre}
                       </h2>
-                      <p className="mt-1 line-clamp-2 text-xs text-gray-500">
-                      {producto.descripcion || "Sin descripcion"}
+                      <p className="mt-1.5 line-clamp-2 text-sm text-gray-600">
+                        {producto.descripcion || "Sin descripcion"}
                       </p>
                     </div>
 
-                    <p className="mt-3 text-lg font-bold text-gray-900">
+                    <p className="mt-4 text-xl font-extrabold text-gray-950">
                       {currencyFormatter.format(producto.precio)}
                     </p>
                   </div>

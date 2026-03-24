@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
+import { getLegacyInventoryPieces } from "../constants/inventory"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { supabase } from "../lib/supabase"
 import type { Producto, ProductoCategoria, ProductoSubcategoria } from "../types/database"
-
-type InventoryProductKey =
-  | "1_pollo"
-  | "3/4_pollo"
-  | "1/2_pollo"
-  | "1_PIEZA"
-  | "combo_papas"
 
 type ProductFormState = {
   nombre: string
@@ -17,7 +11,7 @@ type ProductFormState = {
   precio: string
   categoria: ProductoCategoria
   subcategoria: ProductoSubcategoria | ""
-  claveInventario: "" | InventoryProductKey
+  piezasInventario: number | null
   requiereVariante34: boolean
 }
 
@@ -45,21 +39,9 @@ const EMPTY_FORM: ProductFormState = {
   precio: "",
   categoria: "Clasico",
   subcategoria: "pollo",
-  claveInventario: "",
+  piezasInventario: null,
   requiereVariante34: false,
 }
-
-const INVENTORY_OPTIONS: Array<{
-  value: "" | InventoryProductKey
-  label: string
-}> = [
-  { value: "", label: "Sin impacto de inventario" },
-  { value: "1_pollo", label: "1 Pollo" },
-  { value: "3/4_pollo", label: "3/4 Pollo" },
-  { value: "1/2_pollo", label: "1/2 Pollo" },
-  { value: "1_PIEZA", label: "1 Pieza" },
-  { value: "combo_papas", label: "Combo Papas" },
-]
 
 function getCategoryLabel(categoria: string | null) {
   if (!categoria) return "Sin categoria"
@@ -79,19 +61,17 @@ function getSubcategoryLabel(subcategoria: string | null) {
   return found?.label ?? subcategoria
 }
 
-function mapProductToForm(producto: Producto): ProductFormState {
-  const claveInventario =
-    producto.clave_inventario === "1_pollo" ||
-    producto.clave_inventario === "3/4_pollo" ||
-    producto.clave_inventario === "1/2_pollo" ||
-    producto.clave_inventario === "1_PIEZA" ||
-    producto.clave_inventario === "1_pieza" ||
-    producto.clave_inventario === "combo_papas"
-      ? producto.clave_inventario === "1_pieza"
-        ? "1_PIEZA"
-        : producto.clave_inventario
-      : ""
+function getInventoryImpactLabel(producto: Producto) {
+  const piezasInventario = producto.piezas_inventario ?? getLegacyInventoryPieces(producto.clave_inventario)
 
+  if (typeof piezasInventario === "number" && piezasInventario > 0) {
+    return `${piezasInventario} pzs`
+  }
+
+  return null
+}
+
+function mapProductToForm(producto: Producto): ProductFormState {
   const categoria =
     producto.categoria === "Clasico" ||
     producto.categoria === "Combo" ||
@@ -111,7 +91,8 @@ function mapProductToForm(producto: Producto): ProductFormState {
     precio: producto.precio.toString(),
     categoria,
     subcategoria,
-    claveInventario,
+    piezasInventario:
+      producto.piezas_inventario ?? getLegacyInventoryPieces(producto.clave_inventario),
     requiereVariante34: producto.requiere_variante_3_4 ?? false,
   }
 }
@@ -176,18 +157,30 @@ export function ProductCatalogManager() {
 
       if (field === "categoria") {
         nextForm.subcategoria = SUBCATEGORY_OPTIONS[value as ProductoCategoria][0]?.value ?? ""
-        if (value === "Extra") {
-          nextForm.claveInventario = ""
-          nextForm.requiereVariante34 = false
-        }
       }
 
-      if (field === "claveInventario") {
-        nextForm.requiereVariante34 = value === "3/4_pollo"
+      if (field === "piezasInventario" && value !== 7) {
+        nextForm.requiereVariante34 = false
       }
 
       return nextForm
     })
+  }
+
+  function handleInventoryPiecesChange(rawValue: string) {
+    const normalizedValue = rawValue.trim()
+
+    if (!normalizedValue) {
+      handleFormChange("piezasInventario", null)
+      return
+    }
+
+    const parsedValue = Number.parseInt(normalizedValue, 10)
+
+    handleFormChange(
+      "piezasInventario",
+      Number.isNaN(parsedValue) ? null : parsedValue,
+    )
   }
 
   function handleEditProduct(producto: Producto) {
@@ -219,7 +212,11 @@ export function ProductCatalogManager() {
     const nombre = form.nombre.trim()
     const descripcion = form.descripcion.trim()
     const precio = Number(form.precio)
-    const requiereVariante34 = form.claveInventario === "3/4_pollo" ? true : form.requiereVariante34
+    const piezasInventario =
+      typeof form.piezasInventario === "number" && form.piezasInventario > 0
+        ? form.piezasInventario
+        : null
+    const requiereVariante34 = piezasInventario === 7 ? form.requiereVariante34 : false
 
     if (!nombre) {
       toast.error("Ingresa el nombre del producto")
@@ -228,6 +225,14 @@ export function ProductCatalogManager() {
 
     if (!Number.isFinite(precio) || precio <= 0) {
       toast.error("Ingresa un precio valido")
+      return
+    }
+
+    if (
+      piezasInventario !== null &&
+      (!Number.isInteger(piezasInventario) || piezasInventario < 0)
+    ) {
+      toast.error("Las piezas de inventario deben ser un numero entero positivo")
       return
     }
 
@@ -243,7 +248,7 @@ export function ProductCatalogManager() {
             p_precio?: number | null
             p_categoria?: string | null
             p_subcategoria?: string | null
-            p_clave_inventario?: string | null
+            p_piezas_inventario?: number | null
             p_requiere_variante_3_4?: boolean | null
           },
         ) => Promise<{ data: Producto | null; error: Error | null }>
@@ -254,8 +259,8 @@ export function ProductCatalogManager() {
         p_precio: precio,
         p_categoria: form.categoria,
         p_subcategoria: form.subcategoria || null,
-        p_clave_inventario: form.categoria === "Extra" ? null : form.claveInventario || null,
-        p_requiere_variante_3_4: form.categoria === "Extra" ? false : requiereVariante34,
+        p_piezas_inventario: piezasInventario,
+        p_requiere_variante_3_4: requiereVariante34,
       })
 
       if (error) {
@@ -408,30 +413,36 @@ export function ProductCatalogManager() {
             </div>
 
             <div>
-              <label htmlFor="inventory-key" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Clave de inventario</label>
-              <select
-                id="inventory-key"
-                value={form.claveInventario}
-                onChange={(event) => handleFormChange("claveInventario", event.target.value as ProductFormState["claveInventario"])}
-                disabled={!canManageProducts || form.categoria === "Extra"}
+              <label htmlFor="inventory-pieces" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Piezas a descontar del inventario
+              </label>
+              <input
+                id="inventory-pieces"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={form.piezasInventario ?? ""}
+                onChange={(event) => handleInventoryPiecesChange(event.target.value)}
+                placeholder="Ej. 10 para pollo entero, 5 para medio pollo"
+                disabled={!canManageProducts}
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
-              >
-                {INVENTORY_OPTIONS.map((option) => (
-                  <option key={option.value || "none"} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                Deja vacio o en 0 si el producto no debe descontar inventario principal.
+              </p>
             </div>
 
             <label className="flex items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white px-5 py-4">
               <div>
                 <p className="text-sm font-bold text-slate-900">Requiere variante de 3/4</p>
-                <p className="mt-1 text-xs text-slate-500">Activalo solo para productos que obligan elegir combinacion.</p>
+                <p className="mt-1 text-xs text-slate-500">Activalo solo cuando el producto descuenta 7 piezas y obliga elegir combinacion.</p>
               </div>
               <input
                 type="checkbox"
                 checked={form.requiereVariante34}
                 onChange={(event) => handleFormChange("requiereVariante34", event.target.checked)}
-                disabled={!canManageProducts || form.categoria === "Extra" || form.claveInventario === "3/4_pollo"}
+                disabled={!canManageProducts || form.piezasInventario !== 7}
                 className="h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-300"
               />
             </label>
@@ -474,9 +485,9 @@ export function ProductCatalogManager() {
                             {getSubcategoryLabel(producto.subcategoria)}
                           </span>
                         ) : null}
-                        {producto.clave_inventario ? (
+                        {getInventoryImpactLabel(producto) ? (
                           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
-                            {producto.clave_inventario}
+                            {getInventoryImpactLabel(producto)}
                           </span>
                         ) : null}
                         {producto.requiere_variante_3_4 ? (

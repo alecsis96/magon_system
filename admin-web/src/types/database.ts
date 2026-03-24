@@ -34,6 +34,7 @@ export interface Producto extends Record<string, unknown> {
   categoria: ProductoCategoria | null;
   subcategoria: ProductoSubcategoria | null;
   clave_inventario: string | null;
+  piezas_inventario: number | null;
   requiere_variante_3_4: boolean;
 }
 export interface ProductoInsert extends Record<string, unknown> {
@@ -44,6 +45,7 @@ export interface ProductoInsert extends Record<string, unknown> {
   categoria?: ProductoCategoria | null;
   subcategoria?: ProductoSubcategoria | null;
   clave_inventario?: string | null;
+  piezas_inventario?: number | null;
   requiere_variante_3_4?: boolean;
 }
 export interface ProductoUpdate extends Record<string, unknown> {
@@ -54,6 +56,7 @@ export interface ProductoUpdate extends Record<string, unknown> {
   categoria?: ProductoCategoria | null;
   subcategoria?: ProductoSubcategoria | null;
   clave_inventario?: string | null;
+  piezas_inventario?: number | null;
   requiere_variante_3_4?: boolean;
 }
 export interface Cliente extends Record<string, unknown> {
@@ -469,7 +472,7 @@ export interface Database {
           p_fecha?: ISODateString;
           p_detalles?: Json;
         };
-        Returns: InventarioDiario;
+        Returns: InventarioDiario | null;
       };
     };
     Enums: Record<string, never>;

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { Toaster, toast } from "react-hot-toast"
 import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
@@ -13,6 +13,7 @@ import {
   PIECE_LABELS,
   THREE_QUARTER_VARIANTS,
   THREE_QUARTER_VARIANT_LABELS,
+  getInventoryPieceCount,
   getProductBreakdown,
   resolveInventoryProductKey,
   type InventoryPieceKey,
@@ -94,12 +95,16 @@ const PRODUCTO_DETALLES: Record<string, ProductoDetalle> = {
 
 function getProductoDetalle(producto: Producto): ProductoDetalle {
   const productKey = resolveInventoryProductKey(producto)
+  const inventoryPieces = getInventoryPieceCount(producto) ?? 0
 
   return (
     (productKey ? PRODUCTO_DETALLES[productKey] : null) ?? {
-      piezasInventario: 0,
-      pollosEquivalentes: 0,
-      desglose: null,
+      piezasInventario: inventoryPieces,
+      pollosEquivalentes: inventoryPieces / 10,
+      desglose:
+        inventoryPieces > 0
+          ? `${inventoryPieces} pieza${inventoryPieces === 1 ? "" : "s"} descontadas del inventario principal`
+          : null,
       mermaOptions: MERMA_OPTIONS,
     }
   )
@@ -113,7 +118,7 @@ function isThreeQuarterProduct(producto: Producto) {
 }
 
 function isSinglePieceProduct(producto: Producto) {
-  return resolveInventoryProductKey(producto) === "1_PIEZA"
+  return (getInventoryPieceCount(producto) ?? 0) === 1
 }
 
 function createEmptyPieceBreakdown(): PieceBreakdown {
@@ -186,7 +191,7 @@ function showSaleSuccessToast(totalVenta: number, piezas: number) {
           Venta registrada
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          {currencyFormatter.format(totalVenta)} · {piezas} pzs
+          {currencyFormatter.format(totalVenta)} - {piezas} pzs
         </p>
       </div>
     ),
@@ -319,6 +324,7 @@ function App() {
 
   function buildCheckoutDetails(cartItems: CartItem[]) {
     return cartItems.map((item) => {
+      const detalle = getProductoDetalle(item.producto)
       const breakdown = getCartItemBreakdown(item)
       const mermaBreakdown = getCartItemMermaBreakdown(item)
 
@@ -331,6 +337,7 @@ function App() {
         cantidad: 1,
         precio_unitario: item.producto.precio,
         subtotal: item.producto.precio,
+        piezas_inventario: detalle.piezasInventario,
         variante_3_4: item.threeQuarterVariant,
         merma_descripcion: item.merma,
         alas: breakdown.alas,

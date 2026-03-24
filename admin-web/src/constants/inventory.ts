@@ -17,6 +17,14 @@ export type InventoryProductKey =
   | "1_PIEZA"
   | "combo_papas"
 
+const LEGACY_INVENTORY_PIECES: Record<InventoryProductKey, number> = {
+  "1_pollo": 10,
+  "3/4_pollo": 7,
+  "1/2_pollo": 5,
+  "1_PIEZA": 1,
+  combo_papas: 10,
+}
+
 export const EMPTY_PIECE_BREAKDOWN: PieceBreakdown = {
   alas: 0,
   piernas: 0,
@@ -36,13 +44,7 @@ export const PRODUCTO_DESGLOSE: Record<InventoryProductKey, PieceBreakdown> = {
   },
   combo_papas: { ...PIEZAS_POR_POLLO },
   "1_PIEZA": { ...EMPTY_PIECE_BREAKDOWN },
-  "3/4_pollo": {
-    alas: 0,
-    piernas: 0,
-    muslos: 0,
-    pechugas_grandes: 0,
-    pechugas_chicas: 0,
-  },
+  "3/4_pollo": { ...EMPTY_PIECE_BREAKDOWN },
 }
 
 export const THREE_QUARTER_VARIANTS: Record<ThreeQuarterVariant, PieceBreakdown> =
@@ -88,20 +90,85 @@ function normalizeText(value: string | null | undefined) {
     .toLowerCase()
 }
 
+export function getLegacyInventoryPieces(claveInventario: string | null | undefined) {
+  if (
+    claveInventario === "1_pollo" ||
+    claveInventario === "3/4_pollo" ||
+    claveInventario === "1/2_pollo" ||
+    claveInventario === "1_PIEZA" ||
+    claveInventario === "combo_papas"
+  ) {
+    return LEGACY_INVENTORY_PIECES[claveInventario]
+  }
+
+  if (claveInventario?.toLowerCase() === "1_pieza") {
+    return LEGACY_INVENTORY_PIECES["1_PIEZA"]
+  }
+
+  return null
+}
+
+export function getInventoryPieceCount(product: {
+  id: string
+  nombre: string
+  descripcion?: string | null
+  clave_inventario?: string | null
+  piezas_inventario?: number | null
+}) {
+  if (
+    typeof product.piezas_inventario === "number" &&
+    Number.isInteger(product.piezas_inventario) &&
+    product.piezas_inventario >= 0
+  ) {
+    return product.piezas_inventario
+  }
+
+  const legacyPieces = getLegacyInventoryPieces(product.clave_inventario)
+
+  if (legacyPieces !== null) {
+    return legacyPieces
+  }
+
+  return null
+}
+
 export function resolveInventoryProductKey(product: {
   id: string
   nombre: string
   descripcion?: string | null
   clave_inventario?: string | null
+  piezas_inventario?: number | null
+  requiere_variante_3_4?: boolean | null
 }): InventoryProductKey | null {
   const explicitInventoryKey = product.clave_inventario
+
+  if (explicitInventoryKey === "combo_papas") {
+    return "combo_papas"
+  }
+
+  const inventoryPieces = getInventoryPieceCount(product)
+
+  if (inventoryPieces === 1) {
+    return "1_PIEZA"
+  }
+
+  if (inventoryPieces === 5) {
+    return "1/2_pollo"
+  }
+
+  if (inventoryPieces === 7 && product.requiere_variante_3_4) {
+    return "3/4_pollo"
+  }
+
+  if (inventoryPieces === 10) {
+    return explicitInventoryKey === "combo_papas" ? "combo_papas" : "1_pollo"
+  }
 
   if (
     explicitInventoryKey === "1_pollo" ||
     explicitInventoryKey === "3/4_pollo" ||
     explicitInventoryKey === "1/2_pollo" ||
-    explicitInventoryKey === "1_PIEZA" ||
-    explicitInventoryKey === "combo_papas"
+    explicitInventoryKey === "1_PIEZA"
   ) {
     return explicitInventoryKey
   }
@@ -165,6 +232,8 @@ export function getProductBreakdown(product: {
   nombre: string
   descripcion?: string | null
   clave_inventario?: string | null
+  piezas_inventario?: number | null
+  requiere_variante_3_4?: boolean | null
 }): PieceBreakdown {
   const productKey = resolveInventoryProductKey(product)
 

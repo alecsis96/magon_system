@@ -25,6 +25,7 @@ import {
   generarTextoTicket,
   type PrintableOrder,
 } from "./lib/printing"
+import { sendDispatchPushNotification } from "./lib/push"
 import { supabase } from "./lib/supabase"
 import type { Cliente, PedidoInsert, Producto } from "./types/database"
 
@@ -193,12 +194,23 @@ function isUuid(value: string) {
   )
 }
 
-function showSaleSuccessToast(totalVenta: number, piezas: number) {
+function showSaleSuccessToast(
+  totalVenta: number,
+  piezas: number,
+  dispatchStatus: "none" | "sent" | "failed" = "none",
+) {
+  const statusMessage =
+    dispatchStatus === "sent"
+      ? "Repartidor notificado"
+      : dispatchStatus === "failed"
+        ? "Venta guardada, pero no se notifico al repartidor"
+        : "Venta registrada"
+
   toast.custom(
     () => (
       <div className="w-[min(90vw,18rem)] rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)] backdrop-blur">
         <p className="text-sm font-semibold text-slate-900">
-          Venta registrada
+          {statusMessage}
         </p>
         <p className="mt-1 text-xs text-slate-500">
           {currencyFormatter.format(totalVenta)} - {piezas} pzs
@@ -230,6 +242,7 @@ function App() {
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false)
   const [openMermaItemId, setOpenMermaItemId] = useState<string | null>(null)
   const [isCheckingOut, setIsCheckingOut] = useState(false)
+  const [isDispatchPromptOpen, setIsDispatchPromptOpen] = useState(false)
   const [tipoPedido, setTipoPedido] = useState<"mostrador" | "domicilio">(
     "mostrador",
   )
@@ -364,9 +377,9 @@ function App() {
     })
   }
 
-  async function handleCheckout() {
+  function validateCheckout() {
     if (cart.length === 0 || isCheckingOut) {
-      return
+      return false
     }
 
     if (
@@ -375,16 +388,55 @@ function App() {
       )
     ) {
       toast.error("Selecciona la pieza de cada producto marcado como 1 Pieza")
-      return
+      return false
     }
 
     if (tipoPedido === "domicilio" && !selectedCustomer) {
       toast.error("Selecciona un cliente para pedidos a domicilio")
+      return false
+    }
+
+    return true
+  }
+
+  async function notifyDispatchAfterCheckout(
+    pedidoId: string,
+    orderTotal: number,
+    customerName: string | null,
+  ) {
+    const { error } = await supabase
+      .from("pedidos")
+      .update({ estado: "en_camino" })
+      .eq("id", pedidoId)
+
+    if (error) {
+      throw error
+    }
+
+    const pushResult = await sendDispatchPushNotification({
+      title: "Nuevo pedido en camino",
+      body: `${customerName ?? "Cliente"} - ${currencyFormatter.format(orderTotal)}`,
+      data: {
+        pedidoId,
+        tipoPedido: "domicilio",
+      },
+    })
+
+    if (!pushResult.delivered) {
+      toast("Pedido enviado, pero no hay dispositivo registrado para push", {
+        icon: "i",
+      })
+    }
+  }
+
+  async function handleCheckout(sendDispatchNotification = false) {
+    if (!validateCheckout()) {
       return
     }
 
     try {
       setIsCheckingOut(true)
+      setIsDispatchPromptOpen(false)
       const checkoutDetails = buildCheckoutDetails(cart)
       const posSupabase = supabase as typeof supabase & {
         rpc: {
@@ -449,6 +501,8 @@ function App() {
         throw new Error("La venta se guardo sin devolver el pedido para impresion")
       }
 
+      let dispatchStatus: "none" | "sent" | "failed" = "none"
+
       try {
         const { data: printableOrder, error: printableOrderError } =
           await posSupabase.rpc("get_printable_order", {
@@ -469,10 +523,25 @@ function App() {
         ejecutarImpresionBluetooth(ticketCocina)
         window.setTimeout(() => {
           ejecutarImpresionBluetooth(ticketCliente)
-        }, 3500)
+        }, 4000) // Retraso para evitar que ambas impresiones se mezclen
       } catch (printError) {
         console.error("Error al imprimir la venta:", printError)
         toast.error("Venta guardada, pero no se pudo imprimir el ticket")
+      }
+
+      if (tipoPedido === "domicilio" && sendDispatchNotification) {
+        try {
+          await notifyDispatchAfterCheckout(
+            ventaGuardada.pedido_id,
+            pedidoPayload.total,
+            selectedCustomer?.nombre ?? null,
+          )
+          dispatchStatus = "sent"
+        } catch (dispatchError) {
+          dispatchStatus = "failed"
+          console.error("Error al notificar al repartidor:", dispatchError)
+          toast.error("Venta guardada, pero no se pudo notificar al repartidor")
+        }
       }
 
       setCart([])
@@ -481,13 +550,26 @@ function App() {
       setSelectedCustomer(null)
       setTipoPedido("mostrador")
       setMetodoPago("efectivo")
-      showSaleSuccessToast(total, piezasInventario)
+      showSaleSuccessToast(total, piezasInventario, dispatchStatus)
     } catch (error) {
       console.error("Error al registrar la venta:", error)
       toast.error(getErrorMessage(error))
     } finally {
       setIsCheckingOut(false)
     }
+  }
+
+  function handleCheckoutPress() {
+    if (!validateCheckout()) {
+      return
+    }
+
+    if (tipoPedido === "domicilio") {
+      setIsDispatchPromptOpen(true)
+      return
+    }
+
+    void handleCheckout(false)
   }
 
   const subtotal = cart.reduce(
@@ -511,7 +593,11 @@ function App() {
 
   return (
     <main className="min-h-screen overflow-x-clip bg-gray-100 p-4 text-slate-900 sm:p-6">
-      <Toaster position="top-right" />
+      <Toaster
+        position="top-right"
+        containerStyle={{ top: 88, right: 16 }}
+        toastOptions={{ duration: 2200 }}
+      />
 
       <div className="mx-auto max-w-7xl">
         <nav className="relative mb-6 flex flex-wrap items-center gap-2 rounded-[1.75rem] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 sm:flex-nowrap">
@@ -995,7 +1081,7 @@ function App() {
 
                       <button
                         type="button"
-                        onClick={handleCheckout}
+                        onClick={handleCheckoutPress}
                         disabled={isCheckoutDisabled}
                         className="mt-5 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
                       >
@@ -1023,6 +1109,50 @@ function App() {
           <ProductCatalogManager />
         )}
       </div>
+
+      {isDispatchPromptOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/30 p-4 backdrop-blur-[2px] sm:items-center">
+          <div className="w-full max-w-sm rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.22)] ring-1 ring-slate-200">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">
+              Pedido a domicilio
+            </p>
+            <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-900">
+              Quieres avisar al repartidor ahora?
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Si eliges enviar, el pedido se marcara en camino y se mandara la
+              notificacion sin pasar por la pestaña de pedidos.
+            </p>
+
+            <div className="mt-6 space-y-3">
+              <button
+                type="button"
+                onClick={() => void handleCheckout(true)}
+                disabled={isCheckingOut}
+                className="w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-[0_16px_35px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                Guardar y notificar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCheckout(false)}
+                disabled={isCheckingOut}
+                className="w-full rounded-2xl bg-slate-100 px-5 py-4 text-sm font-bold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                Guardar sin notificar
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDispatchPromptOpen(false)}
+                disabled={isCheckingOut}
+                className="w-full rounded-2xl px-5 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

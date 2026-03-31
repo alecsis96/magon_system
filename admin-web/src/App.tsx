@@ -61,6 +61,10 @@ type RegistrarVentaPosResult = {
   estado: string | null
 }
 
+type PrimaryTab = "POS" | "MONITOR"
+type SecondaryTab = "INVENTARIO" | "PRODUCTOS" | "CONTABILIDAD" | "CLIENTES"
+type AppTab = PrimaryTab | SecondaryTab
+
 const MERMA_OPTIONS = [
   "Ala quemada",
   "Pierna quemada",
@@ -233,10 +237,69 @@ function getErrorMessage(error: unknown) {
   return "No se pudo completar la operacion"
 }
 
+function VentaIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M4 7.5h16" />
+      <path d="M6 4.5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z" />
+      <path d="M9 12h6" />
+      <path d="M9 15.5h3" />
+    </svg>
+  )
+}
+
+function PedidosIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </svg>
+  )
+}
+
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </svg>
+  )
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState<
-    "POS" | "MONITOR" | "INVENTARIO" | "PRODUCTOS" | "CONTABILIDAD" | "CLIENTES"
-  >("POS")
+  const [activeTab, setActiveTab] = useState<AppTab>("POS")
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false)
@@ -590,9 +653,15 @@ function App() {
     (tipoPedido === "domicilio" && !selectedCustomer) ||
     hasPendingSinglePieceSelection ||
     isCheckingOut
+  const menuIsActive =
+    activeTab === "INVENTARIO" ||
+    activeTab === "PRODUCTOS" ||
+    activeTab === "CONTABILIDAD" ||
+    activeTab === "CLIENTES" ||
+    isMoreMenuOpen
 
   return (
-    <main className="min-h-screen overflow-x-clip bg-gray-100 p-4 text-slate-900 sm:p-6">
+    <main className="min-h-screen overflow-x-clip bg-gray-100 p-4 pb-24 text-slate-900 sm:p-6 sm:pb-28">
       <Toaster
         position="top-right"
         containerStyle={{ top: 88, right: 16 }}
@@ -600,91 +669,6 @@ function App() {
       />
 
       <div className="mx-auto max-w-7xl">
-        <nav className="relative mb-6 flex flex-wrap items-center gap-2 rounded-[1.75rem] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 sm:flex-nowrap">
-          {([
-            { id: "POS", label: "Venta" },
-            { id: "MONITOR", label: "Pedidos" },
-          ] as const).map((tab) => {
-            const isActive = activeTab === tab.id
-
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.id)
-                  setIsMoreMenuOpen(false)
-                }}
-                className={`min-w-0 flex-1 rounded-2xl px-3 py-3 text-sm font-bold transition sm:px-4 sm:text-base lg:px-5 lg:py-4 ${
-                  isActive
-                    ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)]"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <span className="block truncate">{tab.label}</span>
-              </button>
-            )
-          })}
-
-          <button
-            type="button"
-            onClick={() => setIsMoreMenuOpen((current) => !current)}
-            className={`shrink-0 rounded-2xl px-4 py-3 text-sm font-black transition focus:outline-none focus:ring-4 ${
-              activeTab === "INVENTARIO" ||
-              activeTab === "PRODUCTOS" ||
-              activeTab === "CONTABILIDAD" ||
-              activeTab === "CLIENTES"
-                ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] focus:ring-slate-200"
-                : "bg-slate-50 text-slate-700 hover:bg-slate-100 focus:ring-slate-100"
-            }`}
-            aria-expanded={isMoreMenuOpen}
-            aria-label="Abrir mas opciones"
-          >
-            Menu
-          </button>
-
-          {isMoreMenuOpen ? (
-            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:left-auto sm:right-2 sm:min-w-[14rem]">
-              {([
-                { id: "INVENTARIO", label: "Inventario" },
-                { id: "PRODUCTOS", label: "Productos" },
-                { id: "CONTABILIDAD", label: "Contabilidad" },
-                { id: "CLIENTES", label: "Clientes" },
-              ] as const).map((tab) => {
-                const isActive = activeTab === tab.id
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveTab(tab.id)
-                      setIsMoreMenuOpen(false)
-                    }}
-                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
-                      isActive
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {isActive ? <span className="text-xs uppercase tracking-[0.18em]">Activo</span> : null}
-                  </button>
-                )
-              })}
-
-              <div className="my-2 border-t border-slate-200" />
-
-              <div className="relative">
-                <AdminAccessButton
-                  className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-700 shadow-none transition hover:bg-slate-50 focus:ring-slate-100"
-                  panelClassName="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
-                />
-              </div>
-            </div>
-          ) : null}
-        </nav>
-
         {activeTab === "POS" ? (
           <>
             <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
@@ -694,7 +678,7 @@ function App() {
             </div>
 
             {cart.length > 0 ? (
-              <div className="fixed bottom-0 left-0 z-40 flex w-full items-center justify-between rounded-t-xl bg-gray-900 p-4 text-white shadow-[0_-18px_40px_rgba(15,23,42,0.22)]">
+              <div className="fixed bottom-20 left-0 z-40 flex w-full items-center justify-between rounded-t-xl bg-gray-900 p-4 text-white shadow-[0_-18px_40px_rgba(15,23,42,0.22)] sm:bottom-24">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -1109,6 +1093,98 @@ function App() {
           <ProductCatalogManager />
         )}
       </div>
+
+      {isMoreMenuOpen ? (
+        <div className="fixed inset-x-4 bottom-24 z-50 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:inset-x-auto sm:right-6 sm:w-[18rem] sm:bottom-28">
+          {([
+            { id: "INVENTARIO", label: "Inventario" },
+            { id: "PRODUCTOS", label: "Productos" },
+            { id: "CONTABILIDAD", label: "Contabilidad" },
+            { id: "CLIENTES", label: "Clientes" },
+          ] as const).map((tab) => {
+            const isActive = activeTab === tab.id
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.id)
+                  setIsMoreMenuOpen(false)
+                }}
+                className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
+                  isActive
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {isActive ? (
+                  <span className="text-xs uppercase tracking-[0.18em]">
+                    Activo
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
+
+          <div className="my-2 border-t border-slate-200" />
+
+          <div className="relative">
+            <AdminAccessButton
+              className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-700 shadow-none transition hover:bg-slate-50 focus:ring-slate-100"
+              panelClassName="absolute bottom-[calc(100%+0.5rem)] left-0 right-0 z-40 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <nav className="fixed bottom-0 left-0 z-50 w-full border-t border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-around px-2 py-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("POS")
+              setIsMoreMenuOpen(false)
+            }}
+            className={`flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
+              activeTab === "POS" ? "text-slate-900" : "text-gray-400"
+            }`}
+            aria-current={activeTab === "POS" ? "page" : undefined}
+          >
+            <VentaIcon className="h-5 w-5" />
+            <span className="text-[10px] font-bold">Venta</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("MONITOR")
+              setIsMoreMenuOpen(false)
+            }}
+            className={`flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
+              activeTab === "MONITOR" ? "text-slate-900" : "text-gray-400"
+            }`}
+            aria-current={activeTab === "MONITOR" ? "page" : undefined}
+          >
+            <PedidosIcon className="h-5 w-5" />
+            <span className="text-[10px] font-bold">Pedidos</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsMoreMenuOpen((current) => !current)}
+            className={`flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
+              menuIsActive ? "text-slate-900" : "text-gray-400"
+            }`}
+            aria-expanded={isMoreMenuOpen}
+            aria-label="Abrir menu"
+          >
+            <MenuIcon className="h-5 w-5" />
+            <span className="text-[10px] font-bold">Menu</span>
+          </button>
+        </div>
+      </nav>
 
       {isDispatchPromptOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/30 p-4 backdrop-blur-[2px] sm:items-center">

@@ -29,7 +29,7 @@ declare
     v_mermas_pechugas_g int := 0;
     v_mermas_pechugas_c int := 0;
     v_piezas_vendidas int := 0;
-    v_mermas_quemadas decimal(10, 2);
+    v_mermas_quemadas int := 0;
 begin
     if p_detalles is null
        or jsonb_typeof(p_detalles) <> 'array'
@@ -143,11 +143,11 @@ begin
         v_mermas_muslos +
         v_mermas_pechugas_g +
         v_mermas_pechugas_c
-    ) / 10.0;
+    );
 
     update public.inventario_diario
     set
-        pollos_vendidos = coalesce(pollos_vendidos, 0) + (v_piezas_vendidas / 10.0),
+        pollos_vendidos = coalesce(pollos_vendidos, 0) + v_piezas_vendidas,
         ventas_alas = coalesce(ventas_alas, 0) + v_ventas_alas,
         ventas_piernas = coalesce(ventas_piernas, 0) + v_ventas_piernas,
         ventas_muslos = coalesce(ventas_muslos, 0) + v_ventas_muslos,

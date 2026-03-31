@@ -20,6 +20,11 @@ import {
   type PieceBreakdown,
   type ThreeQuarterVariant,
 } from "./constants/inventory"
+import {
+  ejecutarImpresionBluetooth,
+  generarTextoTicket,
+  type PrintableOrder,
+} from "./lib/printing"
 import { supabase } from "./lib/supabase"
 import type { Cliente, PedidoInsert, Producto } from "./types/database"
 
@@ -31,7 +36,6 @@ const currencyFormatter = new Intl.NumberFormat("es-MX", {
 
 type ProductoDetalle = {
   piezasInventario: number
-  pollosEquivalentes: number
   desglose: string | null
   mermaOptions: string[]
 }
@@ -42,6 +46,18 @@ type CartItem = {
   merma: string | null
   threeQuarterVariant: ThreeQuarterVariant | null
   singlePieceType: InventoryPieceKey | null
+}
+
+type RegistrarVentaPosResult = {
+  pedido_id: string
+  folio: string | null
+  fecha_creacion: string | null
+  total: number
+  tipo_pedido: string
+  metodo_pago: string | null
+  estado_pago: string
+  cliente_id: string | null
+  estado: string | null
 }
 
 const MERMA_OPTIONS = [
@@ -63,31 +79,26 @@ const MERMA_TO_PIECE_MAP: Record<string, InventoryPieceKey> = {
 const PRODUCTO_DETALLES: Record<string, ProductoDetalle> = {
   "1_pollo": {
     piezasInventario: 10,
-    pollosEquivalentes: 1,
     desglose: "2 alas, 2 piernas, 2 muslos, 2 pechugas grandes y 2 pechugas chicas",
     mermaOptions: MERMA_OPTIONS,
   },
   "3/4_pollo": {
     piezasInventario: 7,
-    pollosEquivalentes: 0.75,
     desglose: "1/2 pollo + ala + pechuga grande o 1/2 pollo + pierna + muslo",
     mermaOptions: MERMA_OPTIONS,
   },
   "1/2_pollo": {
     piezasInventario: 5,
-    pollosEquivalentes: 0.5,
     desglose: null,
     mermaOptions: MERMA_OPTIONS,
   },
   "1_PIEZA": {
     piezasInventario: 1,
-    pollosEquivalentes: 0.1,
-    desglose: "Descuenta 0.1 pollo del inventario principal",
+    desglose: "Descuenta 1 pieza del inventario principal",
     mermaOptions: MERMA_OPTIONS,
   },
   combo_papas: {
     piezasInventario: 10,
-    pollosEquivalentes: 1,
     desglose: null,
     mermaOptions: MERMA_OPTIONS,
   },
@@ -100,7 +111,6 @@ function getProductoDetalle(producto: Producto): ProductoDetalle {
   return (
     (productKey ? PRODUCTO_DETALLES[productKey] : null) ?? {
       piezasInventario: inventoryPieces,
-      pollosEquivalentes: inventoryPieces / 10,
       desglose:
         inventoryPieces > 0
           ? `${inventoryPieces} pieza${inventoryPieces === 1 ? "" : "s"} descontadas del inventario principal`
@@ -375,6 +385,34 @@ function App() {
 
     try {
       setIsCheckingOut(true)
+      const checkoutDetails = buildCheckoutDetails(cart)
+      const posSupabase = supabase as typeof supabase & {
+        rpc: {
+          (
+            fn: "registrar_venta_pos",
+            args: {
+              p_total: number
+              p_tipo_pedido: string
+              p_metodo_pago: string
+              p_estado_pago: string
+              p_cliente_id: string | null
+              p_estado: string | null
+              p_fecha: string
+              p_detalles: ReturnType<typeof buildCheckoutDetails>
+            },
+          ): Promise<{
+            data: RegistrarVentaPosResult | null
+            error: Error | null
+          }>
+          (
+            fn: "get_printable_order",
+            args: { p_pedido_id: string },
+          ): Promise<{
+            data: PrintableOrder | null
+            error: Error | null
+          }>
+        }
+      }
 
       const pedidoPayload: PedidoInsert = {
         total,
@@ -389,19 +427,52 @@ function App() {
           : {}),
       }
 
-      const { error } = await supabase.rpc("registrar_venta", {
+      const { data: ventaGuardada, error } = await posSupabase.rpc(
+        "registrar_venta_pos",
+        {
         p_total: pedidoPayload.total,
         p_tipo_pedido: pedidoPayload.tipo_pedido,
         p_metodo_pago: pedidoPayload.metodo_pago ?? "efectivo",
         p_estado_pago: pedidoPayload.estado_pago,
-        p_cliente_id: pedidoPayload.cliente_id,
+        p_cliente_id: pedidoPayload.cliente_id ?? null,
         p_estado: pedidoPayload.estado ?? null,
         p_fecha: getTodayLocalISODate(),
-        p_detalles: buildCheckoutDetails(cart),
-      })
+        p_detalles: checkoutDetails,
+      },
+      )
 
       if (error) {
         throw error
+      }
+
+      if (!ventaGuardada?.pedido_id) {
+        throw new Error("La venta se guardo sin devolver el pedido para impresion")
+      }
+
+      try {
+        const { data: printableOrder, error: printableOrderError } =
+          await posSupabase.rpc("get_printable_order", {
+            p_pedido_id: ventaGuardada.pedido_id,
+          })
+
+        if (printableOrderError) {
+          throw printableOrderError
+        }
+
+        if (!printableOrder) {
+          throw new Error("No se pudo recuperar el pedido para impresion")
+        }
+
+        const ticketCocina = generarTextoTicket(printableOrder, true)
+        const ticketCliente = generarTextoTicket(printableOrder, false)
+
+        ejecutarImpresionBluetooth(ticketCocina)
+        window.setTimeout(() => {
+          ejecutarImpresionBluetooth(ticketCliente)
+        }, 3500)
+      } catch (printError) {
+        console.error("Error al imprimir la venta:", printError)
+        toast.error("Venta guardada, pero no se pudo imprimir el ticket")
       }
 
       setCart([])

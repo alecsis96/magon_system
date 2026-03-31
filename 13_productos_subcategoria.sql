@@ -19,7 +19,7 @@ create or replace function guardar_producto_admin(
     p_descripcion text default null,
     p_precio decimal(10, 2) default null,
     p_categoria text default null,
-    p_subcategoria text default null,
+    p_subcategoria text default null,ya 
     p_clave_inventario text default null,
     p_requiere_variante_3_4 boolean default false
 )

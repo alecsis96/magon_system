@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import {
   PIECE_LABELS,
+  PIEZAS_POR_POLLO,
   type InventoryPieceKey,
 } from "../constants/inventory"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
@@ -16,6 +17,10 @@ import type {
 
 type MermaType = "caidos" | "quemados"
 type OperationTab = "proveedor" | "mermas" | "ajustes"
+const TOTAL_PIEZAS_POR_POLLO = Object.values(PIEZAS_POR_POLLO).reduce(
+  (total, value) => total + value,
+  0,
+)
 
 const PIECE_FIELD_MAP: Record<
   InventoryPieceKey,
@@ -82,7 +87,7 @@ function getTotalEnParrilla(inventario: InventarioDiario) {
   return (inventario.stock_anterior ?? 0) + (inventario.nuevos_ingresos ?? 0)
 }
 
-function getInventorySoldEquivalent(inventario: InventarioDiario) {
+function getInventorySoldPieces(inventario: InventarioDiario) {
   if (typeof inventario.pollos_vendidos === "number") {
     return inventario.pollos_vendidos
   }
@@ -94,7 +99,7 @@ function getInventorySoldEquivalent(inventario: InventarioDiario) {
     (inventario.ventas_pechugas_g ?? 0) +
     (inventario.ventas_pechugas_c ?? 0)
 
-  return soldPieces / 10
+  return soldPieces
 }
 
 function getInventoryMermaPieces(inventario: InventarioDiario) {
@@ -117,26 +122,24 @@ function getInventoryAdjustmentPieces(inventario: InventarioDiario) {
   )
 }
 
-function getInventoryAdjustmentEquivalent(inventario: InventarioDiario) {
+function getInventoryAdminAdjustmentPieces(inventario: InventarioDiario) {
   if (typeof inventario.ajustes_admin === "number") {
     return inventario.ajustes_admin
   }
 
-  return getInventoryAdjustmentPieces(inventario) / 10
+  return getInventoryAdjustmentPieces(inventario)
 }
 
-function getStockFinalEquivalent(inventario: InventarioDiario) {
+function getStockFinalPieces(inventario: InventarioDiario) {
   if (typeof inventario.stock_final === "number") {
     return inventario.stock_final
   }
 
-  return Number(
-    (
-      getTotalEnParrilla(inventario) -
-      getInventorySoldEquivalent(inventario) -
-      getInventoryMermaPieces(inventario) / 10 +
-      getInventoryAdjustmentEquivalent(inventario)
-    ).toFixed(2),
+  return (
+    getTotalEnParrilla(inventario) -
+    getInventorySoldPieces(inventario) -
+    getInventoryMermaPieces(inventario) +
+    getInventoryAdminAdjustmentPieces(inventario)
   )
 }
 
@@ -170,7 +173,7 @@ function formatDateTime(value: string | null) {
 }
 
 function getPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
-  const totalPollos = getTotalEnParrilla(inventario)
+  const totalPiezas = getTotalEnParrilla(inventario)
   const ventasField = PIECE_FIELD_MAP[pieceKey]
   const mermasField = MERMA_FIELD_MAP[pieceKey]
   const ajustesField = AJUSTE_FIELD_MAP[pieceKey]
@@ -178,17 +181,12 @@ function getPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey
   const mermas = inventario[mermasField] ?? 0
   const ajustes = inventario[ajustesField] ?? 0
 
-  return totalPollos * 2 - ventas - mermas + ajustes
-}
-
-function parseNonNegativeNumber(value: string) {
-  const parsed = Number(value)
-
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return null
-  }
-
-  return parsed
+  return (
+    totalPiezas * (PIEZAS_POR_POLLO[pieceKey] / TOTAL_PIEZAS_POR_POLLO) -
+    ventas -
+    mermas +
+    ajustes
+  )
 }
 
 function parseNonNegativeInteger(value: string) {
@@ -237,7 +235,7 @@ function getMovementQuantityLabel(movement: InventarioMovimiento) {
     return `${formatSignedMetric(movement.cantidad_piezas)} pzs`
   }
 
-  return `${formatSignedMetric(movement.cantidad_equivalente)} pollos`
+  return `${formatSignedMetric(movement.cantidad_equivalente)} pzs`
 }
 
 function getMovementTone(movement: InventarioMovimiento) {
@@ -439,10 +437,10 @@ export function InventoryManager() {
   }, [activeOperationTab, adminAccess.isAdmin])
 
   async function handleStartDay() {
-    const nuevosIngresosValue = parseNonNegativeNumber(nuevosIngresos)
+    const nuevosIngresosValue = parseNonNegativeInteger(nuevosIngresos)
 
     if (nuevosIngresosValue == null) {
-      toast.error("Ingresa una cantidad valida de pollos frescos")
+      toast.error("Ingresa una cantidad valida de piezas nuevas")
       return
     }
 
@@ -511,8 +509,8 @@ export function InventoryManager() {
       return
     }
 
-    const ingresosValue = parseNonNegativeNumber(ingresosExtra || "0")
-    const devolucionValue = parseNonNegativeNumber(devolucionProveedor || "0")
+    const ingresosValue = parseNonNegativeInteger(ingresosExtra || "0")
+    const devolucionValue = parseNonNegativeInteger(devolucionProveedor || "0")
 
     if (ingresosValue == null || devolucionValue == null) {
       toast.error("Ingresa cantidades validas para el movimiento")
@@ -524,9 +522,8 @@ export function InventoryManager() {
       return
     }
 
-    const nextNuevosIngresos = Number(
-      (todayInventory.nuevos_ingresos + ingresosValue - devolucionValue).toFixed(2),
-    )
+    const nextNuevosIngresos =
+      todayInventory.nuevos_ingresos + ingresosValue - devolucionValue
 
     if (nextNuevosIngresos < 0) {
       toast.error("La devolucion no puede dejar los ingresos del dia en negativo")
@@ -556,6 +553,7 @@ export function InventoryManager() {
           fecha: todayInventory.fecha,
           tipo_movimiento: "entrada_proveedor",
           cantidad_equivalente: ingresosValue,
+          cantidad_piezas: ingresosValue,
           motivo: "Ingreso adicional del proveedor",
           registrado_por: actor,
         })
@@ -567,6 +565,7 @@ export function InventoryManager() {
           fecha: todayInventory.fecha,
           tipo_movimiento: "devolucion_proveedor",
           cantidad_equivalente: -devolucionValue,
+          cantidad_piezas: -devolucionValue,
           motivo: "Producto devuelto a cambio al proveedor",
           registrado_por: actor,
         })
@@ -617,7 +616,7 @@ export function InventoryManager() {
     const pieceField = MERMA_FIELD_MAP[mermaPiece]
 
     const payload: InventarioDiarioUpdate = {
-      [generalField]: Number(((todayInventory[generalField] ?? 0) + mermaValue / 10).toFixed(2)),
+      [generalField]: (todayInventory[generalField] ?? 0) + mermaValue,
       [pieceField]: (todayInventory[pieceField] ?? 0) + mermaValue,
     }
 
@@ -642,7 +641,7 @@ export function InventoryManager() {
           tipo_movimiento: "merma",
           subtipo: mermaType,
           pieza: mermaPiece,
-          cantidad_equivalente: Number((-(mermaValue / 10)).toFixed(2)),
+          cantidad_equivalente: -mermaValue,
           cantidad_piezas: -mermaValue,
           motivo: mermaReason.trim(),
           registrado_por: getMovementActor(),
@@ -714,9 +713,7 @@ export function InventoryManager() {
 
     const ajusteField = AJUSTE_FIELD_MAP[selectedPieceAdjustment]
     const nextPieceAdjustment = (todayInventory[ajusteField] ?? 0) + deltaPieces
-    const nextAdminAdjustment = Number(
-      ((todayInventory.ajustes_admin ?? 0) + deltaPieces / 10).toFixed(2),
-    )
+    const nextAdminAdjustment = (todayInventory.ajustes_admin ?? 0) + deltaPieces
 
     const payload: InventarioDiarioUpdate = {
       [ajusteField]: nextPieceAdjustment,
@@ -744,7 +741,7 @@ export function InventoryManager() {
           tipo_movimiento: "ajuste_admin",
           subtipo: "stock_por_pieza",
           pieza: selectedPieceAdjustment,
-          cantidad_equivalente: Number((deltaPieces / 10).toFixed(2)),
+          cantidad_equivalente: deltaPieces,
           cantidad_piezas: deltaPieces,
           motivo: pieceAdjustmentReason.trim(),
           registrado_por: getMovementActor(),
@@ -815,6 +812,7 @@ export function InventoryManager() {
           fecha: inventory.fecha,
           tipo_movimiento: "reapertura_admin",
           cantidad_equivalente: 0,
+          cantidad_piezas: 0,
           motivo: "Dia reabierto por administrador",
           registrado_por: getMovementActor(),
         },
@@ -834,15 +832,15 @@ export function InventoryManager() {
       return
     }
 
-    const conteoValue = Number(conteoFisicoCierre)
+    const conteoValue = parseNonNegativeInteger(conteoFisicoCierre)
 
-    if (!Number.isFinite(conteoValue) || conteoValue < 0) {
+    if (conteoValue == null) {
       toast.error("Ingresa un conteo fisico valido")
       return
     }
 
-    const stockEstimado = getStockFinalEquivalent(todayInventory)
-    const diferencia = Number((conteoValue - stockEstimado).toFixed(2))
+    const stockEstimado = getStockFinalPieces(todayInventory)
+    const diferencia = conteoValue - stockEstimado
 
     const payload: InventarioDiarioUpdate = {
       conteo_fisico_cierre: conteoValue,
@@ -873,6 +871,7 @@ export function InventoryManager() {
           fecha: inventory.fecha,
           tipo_movimiento: "cierre_turno",
           cantidad_equivalente: 0,
+          cantidad_piezas: 0,
           motivo: notasCierre.trim() || "Cierre de turno registrado",
           registrado_por: getMovementActor(),
         },
@@ -915,24 +914,24 @@ export function InventoryManager() {
             Registro opcional del dia
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">
-            Las ventas ya no dependen de iniciar inventario. Si hoy llega pollo, registralo aqui.
+            Las ventas ya no dependen de iniciar inventario. Si hoy llega producto nuevo, registralo aqui.
             Si no llega producto nuevo, puedes dejar este paso pendiente y vender normalmente.
           </p>
           <p className="mt-5 text-2xl font-black text-amber-600 sm:text-3xl">
-            Stock sobrante de ayer: {formatMetric(stockAnterior)} pollos
+            Stock sobrante de ayer: {formatMetric(stockAnterior)} pzs
           </p>
           <div className="mt-6">
             <label
               htmlFor="nuevos-ingresos"
               className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
             >
-              Cuantos pollos frescos llegaron hoy? (Opcional)
+              Cuantas piezas nuevas llegaron hoy? (Opcional)
             </label>
             <input
               id="nuevos-ingresos"
               type="number"
               min="0"
-              step="0.1"
+              step="1"
               value={nuevosIngresos}
               onChange={(event) => setNuevosIngresos(event.target.value)}
               className="mt-3 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400 sm:py-5 sm:text-2xl"
@@ -951,7 +950,7 @@ export function InventoryManager() {
     )
   }
 
-  const stockDisponible = getStockFinalEquivalent(todayInventory)
+  const stockDisponible = getStockFinalPieces(todayInventory)
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
   const canUseAdminAdjustments = adminAccess.isAdmin
@@ -1020,10 +1019,10 @@ export function InventoryManager() {
             {formatMetric(stockDisponible)}
           </p>
           <p className="mt-3 text-sm text-slate-300">
-            Inicio del dia: {formatMetric(getTotalEnParrilla(todayInventory))} pollos
+            Inicio del dia: {formatMetric(getTotalEnParrilla(todayInventory))} pzs
           </p>
           <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Ajustes admin: {formatSignedMetric(getInventoryAdjustmentEquivalent(todayInventory))}
+            Ajustes admin: {formatSignedMetric(getInventoryAdminAdjustmentPieces(todayInventory))}
           </p>
         </article>
 
@@ -1032,7 +1031,7 @@ export function InventoryManager() {
             Vendidos
           </p>
           <p className="mt-2 text-2xl font-black text-emerald-600 sm:text-3xl">
-            {formatMetric(getInventorySoldEquivalent(todayInventory))}
+            {formatMetric(getInventorySoldPieces(todayInventory))}
           </p>
         </article>
 
@@ -1121,18 +1120,18 @@ export function InventoryManager() {
               Movimiento de proveedor
             </h4>
             <p className="mt-1 text-sm text-slate-500">
-              Usa esta vista si el pollo llega despues de abrir caja o si una parte se devuelve a cambio.
+              Usa esta vista si llegan piezas despues de abrir caja o si una parte se devuelve a cambio.
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div>
                 <label htmlFor="ingresos-extra" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Pollo nuevo recibido
+                  Piezas nuevas recibidas
                 </label>
                 <input
                   id="ingresos-extra"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="1"
                   value={ingresosExtra}
                   onChange={(event) => setIngresosExtra(event.target.value)}
                   disabled={isClosed}
@@ -1148,7 +1147,7 @@ export function InventoryManager() {
                   id="devolucion-proveedor"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="1"
                   value={devolucionProveedor}
                   onChange={(event) => setDevolucionProveedor(event.target.value)}
                   disabled={isClosed}
@@ -1159,7 +1158,7 @@ export function InventoryManager() {
 
             <div className="mt-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               <span className="font-bold text-slate-900">Devuelto a cambio</span>{" "}
-              descuenta del ingreso acumulado del dia. Puedes usar decimal en equivalencia de pollo si aplica.
+              descuenta piezas del ingreso acumulado del dia.
             </div>
 
             <button
@@ -1431,11 +1430,11 @@ export function InventoryManager() {
               Inventario por pieza
             </p>
             <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
-              Stock fisico actual
+              Stock estimado por pieza
             </h3>
           </div>
           <p className="text-sm text-slate-500">
-            Formula: ((stock anterior + nuevos ingresos) x 2) - ventas - mermas + ajustes
+            Formula: ((stock anterior + nuevos ingresos) x piezas base de cada corte / 10) - ventas - mermas + ajustes
           </p>
         </div>
 
@@ -1460,7 +1459,9 @@ export function InventoryManager() {
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       {PIECE_LABELS[pieceKey]}
                     </p>
-                    <p className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">{stock}</p>
+                    <p className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">
+                      {formatMetric(stock)}
+                    </p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     {isLowStock ? (
@@ -1571,7 +1572,7 @@ export function InventoryManager() {
                   id="conteo-fisico-cierre"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="1"
                   value={conteoFisicoCierre}
                   onChange={(event) => setConteoFisicoCierre(event.target.value)}
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-xl font-black text-slate-900 outline-none transition focus:border-slate-400"
@@ -1587,7 +1588,7 @@ export function InventoryManager() {
                   rows={4}
                   value={notasCierre}
                   onChange={(event) => setNotasCierre(event.target.value)}
-                  placeholder="Ej. Sobraron 2 pollos enteros en parrilla y una pechuga en preparacion"
+                  placeholder="Ej. Sobraron 8 piezas en parrilla y una pechuga en preparacion"
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>

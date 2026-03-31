@@ -1,7 +1,7 @@
 interface InventoryStatusProps {
   stockDisponible: number
   stockInicioDia: number
-  pollosVendidos: number
+  piezasVendidas: number
   mermasRegistradas: number
   warningMessage?: string | null
 }
@@ -13,7 +13,7 @@ function formatMetric(value: number) {
 export function InventoryStatus({
   stockDisponible,
   stockInicioDia,
-  pollosVendidos,
+  piezasVendidas,
   mermasRegistradas,
   warningMessage = null,
 }: InventoryStatusProps) {
@@ -38,16 +38,16 @@ export function InventoryStatus({
             {formatMetric(stockDisponible)}
           </p>
           <p className="text-xs text-slate-400">
-            Inicio del dia: {formatMetric(stockInicioDia)} pollos
+            Inicio del dia: {formatMetric(stockInicioDia)} pzs
           </p>
         </div>
 
         <div className="rounded-2xl bg-emerald-500/12 p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-            Pollos Vendidos
+            Piezas Vendidas
           </p>
           <p className="mt-2 text-2xl font-black text-emerald-400">
-            {formatMetric(pollosVendidos)}
+            {formatMetric(piezasVendidas)}
           </p>
           <p className="text-xs text-emerald-200/80">
             Basado en el estado actual

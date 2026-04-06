@@ -1,5 +1,7 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
+  type AppStateStatus,
   Alert,
   FlatList,
   Image,
@@ -15,10 +17,18 @@ import {
   View,
 } from 'react-native';
 import { decode } from 'base64-arraybuffer';
+import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  recordCriticalAction,
+  recordOrdersRefreshError,
+  recordOrdersRefreshSuccess,
+  recordRealtimeEvent,
+  startOrdersRefreshTimer,
+} from '@/src/features/reparto/runtime-metrics';
 import { supabase } from '@/src/lib/supabase';
 
 type PaymentStatus = 'pagado' | 'pendiente';
@@ -54,9 +64,30 @@ type InlineFeedback = {
   message: string;
 };
 
+type DetailFeedback = {
+  type: 'error' | 'info';
+  message: string;
+};
+
+type QuickFilter = 'all' | 'capture_pending' | 'payment_pending';
+
+const CTA_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
+
+const FILTER_OPTIONS: { key: QuickFilter; label: string }[] = [
+  { key: 'all', label: 'Todos' },
+  { key: 'capture_pending', label: 'Captura pendiente' },
+  { key: 'payment_pending', label: 'Cobro pendiente' },
+];
+
 type HeaderProps = {
   totalOrders: number;
+  filter: QuickFilter;
+  onFilterChange: (filter: QuickFilter) => void;
   lastUpdatedAt: Date | null;
+  isOffline: boolean;
+  offlineMessage: string | null;
+  onRetryNow: () => void;
+  isRetrying: boolean;
   inlineFeedback: InlineFeedback | null;
 };
 
@@ -151,9 +182,40 @@ function formatRelativeUpdate(timestamp: Date | null, now: number) {
   return `hace ${hours}h`;
 }
 
+function isCapturePending(order: DeliveryOrder) {
+  const client = order.clientes;
+  return !client?.latitud || !client?.url_foto_fachada;
+}
+
+function isPaymentPending(order: DeliveryOrder) {
+  return order.estado_pago !== 'pagado';
+}
+
+function getOrderPriority(order: DeliveryOrder) {
+  if (isCapturePending(order)) {
+    return 0;
+  }
+
+  if (isPaymentPending(order)) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function playLightHaptic() {
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+}
+
 const DeliveryHeader = memo(function DeliveryHeader({
   totalOrders,
+  filter,
+  onFilterChange,
   lastUpdatedAt,
+  isOffline,
+  offlineMessage,
+  onRetryNow,
+  isRetrying,
   inlineFeedback,
 }: HeaderProps) {
   const [clock, setClock] = useState(() => Date.now());
@@ -174,6 +236,38 @@ const DeliveryHeader = memo(function DeliveryHeader({
       <View style={styles.headerMetaRow}>
         <Text style={styles.headerMetaItem}>Pedidos: {totalOrders}</Text>
         <Text style={styles.headerMetaItem}>Actualizado {formatRelativeUpdate(lastUpdatedAt, clock)}</Text>
+      </View>
+
+      {isOffline ? (
+        <View style={styles.offlineCard}>
+          <Text style={styles.offlineTitle}>Sin conexion operativa</Text>
+          <Text style={styles.offlineText}>
+            {offlineMessage ?? 'No se pudo contactar la API. Mostrando ultimo listado disponible.'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.offlineRetryButton, isRetrying && styles.buttonDisabled]}
+            onPress={onRetryNow}
+            disabled={isRetrying}
+            hitSlop={CTA_HIT_SLOP}>
+            <Text style={styles.offlineRetryButtonText}>{isRetrying ? 'Reintentando...' : 'Reintentar ahora'}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      <View style={styles.filterRow}>
+        {FILTER_OPTIONS.map((option) => {
+          const isActive = option.key === filter;
+
+          return (
+            <TouchableOpacity
+              key={option.key}
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+              onPress={() => onFilterChange(option.key)}
+              hitSlop={CTA_HIT_SLOP}>
+              <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {inlineFeedback ? (
@@ -255,14 +349,16 @@ const OrderCard = memo(function OrderCard({
           <TouchableOpacity
             style={[styles.primaryButton, styles.captureButton, isCapturing && styles.buttonDisabled]}
             onPress={() => client?.id && onCapture(client.id)}
-            disabled={!client?.id || isCapturing}>
+            disabled={!client?.id || isCapturing}
+            hitSlop={CTA_HIT_SLOP}>
             <Text style={styles.primaryButtonText}>{isCapturing ? 'Capturando...' : 'Capturar'}</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
             style={[styles.primaryButton, isDelivering && styles.buttonDisabled]}
             onPress={() => onDeliver(item.id, item.metodo_pago, item.estado_pago)}
-            disabled={isDelivering}>
+            disabled={isDelivering}
+            hitSlop={CTA_HIT_SLOP}>
             <Text style={styles.primaryButtonText}>{isDelivering ? 'Entregando...' : 'Entregar'}</Text>
           </TouchableOpacity>
         )}
@@ -271,16 +367,20 @@ const OrderCard = memo(function OrderCard({
           <TouchableOpacity
             style={[styles.secondaryButton, !canOpenRoute && styles.buttonDisabled]}
             onPress={() => onRoute(client)}
-            disabled={!canOpenRoute}>
+            disabled={!canOpenRoute}
+            hitSlop={CTA_HIT_SLOP}>
             <Text style={styles.secondaryButtonText}>Ruta</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => onCall(client?.telefono ?? null)}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => onCall(client?.telefono ?? null)}
+            hitSlop={CTA_HIT_SLOP}>
             <Text style={styles.secondaryButtonText}>Llamar</Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.detailButton} onPress={() => onOpenDetail(item)}>
+        <TouchableOpacity style={styles.detailButton} onPress={() => onOpenDetail(item)} hitSlop={CTA_HIT_SLOP}>
           <Text style={styles.detailButtonText}>Ver detalle</Text>
         </TouchableOpacity>
       </View>
@@ -293,15 +393,23 @@ export default function DeliveryHomeScreen() {
   const [activeOrders, setActiveOrders] = useState<DeliveryOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const [capturingClientId, setCapturingClientId] = useState<string | null>(null);
   const [deliveringOrderId, setDeliveringOrderId] = useState<string | null>(null);
   const [fetchErrorMessage, setFetchErrorMessage] = useState<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
+  const [detailFeedback, setDetailFeedback] = useState<DetailFeedback | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [inlineFeedback, setInlineFeedback] = useState<InlineFeedback | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const isActiveApp = appState === 'active';
 
-  const fetchPedidos = useCallback(async () => {
+  const fetchPedidos = useCallback(async (source: string = 'manual') => {
+    const startedAt = startOrdersRefreshTimer();
     const { data, error } = await supabase
       .from('pedidos')
       .select(
@@ -311,12 +419,16 @@ export default function DeliveryHomeScreen() {
       .order('fecha_creacion', { ascending: true });
 
     if (error) {
+      recordOrdersRefreshError(startedAt, source, getErrorMessage(error));
       throw error;
     }
 
-    setActiveOrders(normalizeOrders((data ?? []) as unknown[]));
+    const normalizedOrders = normalizeOrders((data ?? []) as unknown[]);
+    setActiveOrders(normalizedOrders);
     setFetchErrorMessage(null);
+    setIsOffline(false);
     setLastUpdatedAt(new Date());
+    recordOrdersRefreshSuccess(startedAt, source, normalizedOrders.length);
   }, []);
 
   const showInlineFeedback = useCallback((feedback: InlineFeedback) => {
@@ -340,11 +452,13 @@ export default function DeliveryHomeScreen() {
   useEffect(() => {
     const load = async () => {
       try {
-        await fetchPedidos();
+        await fetchPedidos('initial_load');
       } catch (error) {
         console.error('Error loading active delivery orders:', error);
         const errorMessage = getErrorMessage(error);
         setFetchErrorMessage(errorMessage);
+        setIsOffline(true);
+        recordCriticalAction('pedidos_initial_load', 'error', errorMessage);
         Alert.alert('No se pudieron cargar los pedidos', errorMessage);
       } finally {
         setIsLoading(false);
@@ -355,49 +469,124 @@ export default function DeliveryHomeScreen() {
   }, [fetchPedidos]);
 
   useEffect(() => {
-    const subscription = supabase
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      setAppState(nextState);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const stopRealtime = useCallback(() => {
+    if (!realtimeChannelRef.current) {
+      return;
+    }
+
+    void supabase.removeChannel(realtimeChannelRef.current);
+    realtimeChannelRef.current = null;
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (!pollingIntervalRef.current) {
+      return;
+    }
+
+    clearInterval(pollingIntervalRef.current);
+    pollingIntervalRef.current = null;
+  }, []);
+
+  const startRealtime = useCallback(() => {
+    if (realtimeChannelRef.current) {
+      return;
+    }
+
+    const channel = supabase
       .channel('public:pedidos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => {
-        Vibration.vibrate();
-        void fetchPedidos().catch((error) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, (payload) => {
+        Vibration.vibrate(80);
+        playLightHaptic();
+        recordRealtimeEvent(payload.eventType ?? 'unknown');
+
+        void fetchPedidos('realtime').catch((error) => {
           console.error('Error refreshing delivery orders from realtime:', error);
-          setFetchErrorMessage(getErrorMessage(error));
+          const errorMessage = getErrorMessage(error);
+          setFetchErrorMessage(errorMessage);
+          setIsOffline(true);
+          recordCriticalAction('pedidos_realtime_refresh', 'error', errorMessage);
         });
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          void fetchPedidos().catch((error) => {
+          void fetchPedidos('realtime_subscribed').catch((error) => {
             console.error('Error refreshing delivery orders on subscribe:', error);
-            setFetchErrorMessage(getErrorMessage(error));
+            const errorMessage = getErrorMessage(error);
+            setFetchErrorMessage(errorMessage);
+            setIsOffline(true);
+            recordCriticalAction('pedidos_realtime_subscribed', 'error', errorMessage);
           });
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setIsOffline(true);
+          setFetchErrorMessage('Conexion en tiempo real interrumpida.');
         }
       });
 
-    return () => {
-      void supabase.removeChannel(subscription);
-    };
+    realtimeChannelRef.current = channel;
+  }, [fetchPedidos]);
+
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      return;
+    }
+
+    pollingIntervalRef.current = setInterval(() => {
+      void fetchPedidos('polling').catch((error) => {
+        console.error('Error refreshing delivery orders from polling:', error);
+        const errorMessage = getErrorMessage(error);
+        setFetchErrorMessage(errorMessage);
+        setIsOffline(true);
+        recordCriticalAction('pedidos_polling_refresh', 'error', errorMessage);
+      });
+    }, 10000);
   }, [fetchPedidos]);
 
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      void fetchPedidos().catch((error) => {
-        console.error('Error refreshing delivery orders from polling:', error);
-        setFetchErrorMessage(getErrorMessage(error));
+    if (isActiveApp) {
+      startRealtime();
+      startPolling();
+      void fetchPedidos('appstate_active').catch((error) => {
+        const errorMessage = getErrorMessage(error);
+        setFetchErrorMessage(errorMessage);
+        setIsOffline(true);
       });
-    }, 10000);
+      return;
+    }
 
+    stopRealtime();
+    stopPolling();
+  }, [fetchPedidos, isActiveApp, startPolling, startRealtime, stopPolling, stopRealtime]);
+
+  useEffect(() => {
     return () => {
-      clearInterval(intervalId);
+      stopRealtime();
+      stopPolling();
     };
-  }, [fetchPedidos]);
+  }, [stopPolling, stopRealtime]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
 
     try {
-      await fetchPedidos();
+      await fetchPedidos('manual_refresh');
+      recordCriticalAction('manual_refresh', 'ok', 'Reintento manual exitoso');
     } catch (error) {
       console.error('Error refreshing active delivery orders:', error);
+      const errorMessage = getErrorMessage(error);
+      setFetchErrorMessage(errorMessage);
+      setIsOffline(true);
+      recordCriticalAction('manual_refresh', 'error', errorMessage);
       Alert.alert('No se pudieron actualizar los pedidos', 'Intenta nuevamente en unos segundos.');
     } finally {
       setIsRefreshing(false);
@@ -407,6 +596,8 @@ export default function DeliveryHomeScreen() {
   const handleCaptureData = useCallback(
     async (clienteId: string) => {
       setCapturingClientId(clienteId);
+      setDetailFeedback(null);
+      playLightHaptic();
 
       try {
         const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
@@ -481,10 +672,14 @@ export default function DeliveryHomeScreen() {
           type: 'success',
           message: 'Captura guardada. Ya podes continuar con la entrega.',
         });
-        await fetchPedidos();
+        recordCriticalAction('captura_cliente', 'ok', `cliente:${clienteId}`);
+        await fetchPedidos('capture_success');
       } catch (error) {
         console.error('Error capturing delivery client data:', error);
-        Alert.alert('No se pudo guardar la captura', getErrorMessage(error));
+        const errorMessage = getErrorMessage(error);
+        setDetailFeedback({ type: 'error', message: `Captura fallida: ${errorMessage}` });
+        recordCriticalAction('captura_cliente', 'error', errorMessage);
+        Alert.alert('No se pudo guardar la captura', errorMessage);
       } finally {
         setCapturingClientId(null);
       }
@@ -493,7 +688,14 @@ export default function DeliveryHomeScreen() {
   );
 
   const handleOpenRoute = useCallback(async (client: DeliveryClient | null) => {
+    playLightHaptic();
+
     if (!client?.latitud || !client.longitud) {
+      setDetailFeedback({
+        type: 'info',
+        message: 'Ruta no disponible: faltan coordenadas en este cliente.',
+      });
+      recordCriticalAction('abrir_ruta', 'error', 'cliente_sin_coordenadas');
       Alert.alert('Ruta no disponible', 'Este cliente todavia no tiene coordenadas guardadas.');
       return;
     }
@@ -501,29 +703,46 @@ export default function DeliveryHomeScreen() {
     try {
       const url = `${GOOGLE_MAPS_BASE_URL}${client.latitud},${client.longitud}`;
       await Linking.openURL(url);
+      recordCriticalAction('abrir_ruta', 'ok', `cliente:${client.id}`);
     } catch (error) {
       console.error('Error opening route:', error);
-      Alert.alert('No se pudo abrir el mapa', getErrorMessage(error));
+      const errorMessage = getErrorMessage(error);
+      setDetailFeedback({ type: 'error', message: `Ruta fallida: ${errorMessage}` });
+      recordCriticalAction('abrir_ruta', 'error', errorMessage);
+      Alert.alert('No se pudo abrir el mapa', errorMessage);
     }
   }, []);
 
   const handleCall = useCallback(async (phone: string | null) => {
+    playLightHaptic();
+
     if (!phone) {
+      setDetailFeedback({
+        type: 'info',
+        message: 'Llamada no disponible: el cliente no tiene telefono registrado.',
+      });
+      recordCriticalAction('llamar_cliente', 'error', 'cliente_sin_telefono');
       Alert.alert('Telefono no disponible', 'Este cliente no tiene telefono registrado.');
       return;
     }
 
     try {
       await Linking.openURL(`tel:${phone}`);
+      recordCriticalAction('llamar_cliente', 'ok', `telefono:${phone}`);
     } catch (error) {
       console.error('Error starting call:', error);
-      Alert.alert('No se pudo iniciar la llamada', getErrorMessage(error));
+      const errorMessage = getErrorMessage(error);
+      setDetailFeedback({ type: 'error', message: `Llamada fallida: ${errorMessage}` });
+      recordCriticalAction('llamar_cliente', 'error', errorMessage);
+      Alert.alert('No se pudo iniciar la llamada', errorMessage);
     }
   }, []);
 
   const handleEntregar = useCallback(
     async (pedidoId: string, metodoPago: string | null, estadoPago: PaymentStatus | null) => {
       setDeliveringOrderId(pedidoId);
+      setDetailFeedback(null);
+      playLightHaptic();
 
       try {
         const payload: DeliverPayload = {
@@ -549,8 +768,12 @@ export default function DeliveryHomeScreen() {
           type: 'success',
           message: 'Entrega registrada correctamente.',
         });
+        recordCriticalAction('entregar_pedido', 'ok', `pedido:${pedidoId}`);
       } catch (error) {
         console.error('Error updating delivered order:', error);
+        const errorMessage = getErrorMessage(error);
+        setDetailFeedback({ type: 'error', message: `Entrega fallida: ${errorMessage}` });
+        recordCriticalAction('entregar_pedido', 'error', errorMessage);
         Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
       } finally {
         setDeliveringOrderId(null);
@@ -561,6 +784,7 @@ export default function DeliveryHomeScreen() {
 
   const handleEntregarConExcepcion = useCallback(
     (pedidoId: string, metodoPago: string | null, estadoPago: PaymentStatus | null) => {
+      playLightHaptic();
       Alert.alert(
         'Confirmar entrega con excepcion',
         'No hay captura completa (GPS/foto). Esta accion queda registrada para auditoria. ¿Deseas continuar?',
@@ -601,8 +825,12 @@ export default function DeliveryHomeScreen() {
                     type: 'info',
                     message: 'Entrega con excepcion registrada para auditoria.',
                   });
+                  recordCriticalAction('entregar_con_excepcion', 'ok', `pedido:${pedidoId}`);
                 } catch (error) {
                   console.error('Error updating delivered order with exception:', error);
+                  const errorMessage = getErrorMessage(error);
+                  setDetailFeedback({ type: 'error', message: `Entrega con excepcion fallida: ${errorMessage}` });
+                  recordCriticalAction('entregar_con_excepcion', 'error', errorMessage);
                   Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
                 } finally {
                   setDeliveringOrderId(null);
@@ -617,10 +845,13 @@ export default function DeliveryHomeScreen() {
   );
 
   const handleOpenDetail = useCallback((order: DeliveryOrder) => {
+    playLightHaptic();
+    setDetailFeedback(null);
     setSelectedOrder(order);
   }, []);
 
   const closeDetail = useCallback(() => {
+    setDetailFeedback(null);
     setSelectedOrder(null);
   }, []);
 
@@ -629,20 +860,67 @@ export default function DeliveryHomeScreen() {
       return 'Cargando pedidos en camino...';
     }
 
+    if (quickFilter === 'capture_pending') {
+      return 'No hay pedidos con captura pendiente.';
+    }
+
+    if (quickFilter === 'payment_pending') {
+      return 'No hay pedidos con cobro pendiente.';
+    }
+
     return 'No hay pedidos activos para reparto.';
-  }, [isLoading]);
+  }, [isLoading, quickFilter]);
+
+  const displayedOrders = useMemo(() => {
+    if (quickFilter === 'capture_pending') {
+      return activeOrders.filter((order) => isCapturePending(order));
+    }
+
+    if (quickFilter === 'payment_pending') {
+      return activeOrders.filter((order) => isPaymentPending(order));
+    }
+
+    return activeOrders
+      .map((order, index) => ({ order, index }))
+      .sort((left, right) => {
+        const leftPriority = getOrderPriority(left.order);
+        const rightPriority = getOrderPriority(right.order);
+
+        if (leftPriority !== rightPriority) {
+          return leftPriority - rightPriority;
+        }
+
+        return left.index - right.index;
+      })
+      .map((entry) => entry.order);
+  }, [activeOrders, quickFilter]);
 
   const listBottomPadding = useMemo(() => 28 + insets.bottom + 72, [insets.bottom]);
 
   const listHeader = useMemo(
     () => (
       <DeliveryHeader
-        totalOrders={activeOrders.length}
+        totalOrders={displayedOrders.length}
+        filter={quickFilter}
+        onFilterChange={setQuickFilter}
         lastUpdatedAt={lastUpdatedAt}
+        isOffline={isOffline}
+        offlineMessage={fetchErrorMessage}
+        onRetryNow={() => void handleRefresh()}
+        isRetrying={isRefreshing}
         inlineFeedback={inlineFeedback}
       />
     ),
-    [activeOrders.length, inlineFeedback, lastUpdatedAt]
+    [
+      displayedOrders.length,
+      fetchErrorMessage,
+      handleRefresh,
+      inlineFeedback,
+      isOffline,
+      isRefreshing,
+      lastUpdatedAt,
+      quickFilter,
+    ]
   );
 
   const renderOrder = useCallback(
@@ -687,12 +965,12 @@ export default function DeliveryHomeScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
         <FlatList
-          data={activeOrders}
+          data={displayedOrders}
           keyExtractor={(item) => item.id}
           renderItem={renderOrder}
           ListHeaderComponent={listHeader}
           contentContainerStyle={
-            activeOrders.length === 0
+            displayedOrders.length === 0
               ? [styles.emptyContainer, { paddingBottom: listBottomPadding }]
               : [styles.listContent, { paddingBottom: listBottomPadding }]
           }
@@ -719,10 +997,77 @@ export default function DeliveryHomeScreen() {
                 <Text style={styles.detailEyebrow}>Pedido #{selectedOrder?.id.slice(0, 8)}</Text>
                 <Text style={styles.detailTitle}>{selectedClient?.nombre ?? 'Cliente sin asignar'}</Text>
               </View>
-              <TouchableOpacity style={styles.detailCloseButton} onPress={closeDetail}>
+              <TouchableOpacity style={styles.detailCloseButton} onPress={closeDetail} hitSlop={CTA_HIT_SLOP}>
                 <Text style={styles.detailCloseText}>Cerrar</Text>
               </TouchableOpacity>
             </View>
+
+            <View style={styles.detailTopActionsRow}>
+              <TouchableOpacity
+                style={[styles.detailTopActionButton, !selectedClient?.latitud && styles.buttonDisabled]}
+                onPress={() => void handleOpenRoute(selectedClient)}
+                hitSlop={CTA_HIT_SLOP}
+                disabled={!selectedClient?.latitud || !selectedClient?.longitud}>
+                <Text style={styles.detailTopActionText}>Ruta</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.detailTopActionButton, !selectedClient?.telefono && styles.buttonDisabled]}
+                onPress={() => void handleCall(selectedClient?.telefono ?? null)}
+                hitSlop={CTA_HIT_SLOP}
+                disabled={!selectedClient?.telefono}>
+                <Text style={styles.detailTopActionText}>Llamar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.riskSummaryCard}>
+              <Text style={styles.detailLabel}>Riesgo operativo</Text>
+              <View style={styles.riskSummaryRow}>
+                <View
+                  style={[
+                    styles.riskBadge,
+                    selectedRequiresCapture ? styles.riskBadgePending : styles.riskBadgeOk,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.riskBadgeText,
+                      selectedRequiresCapture ? styles.riskBadgeTextPending : styles.riskBadgeTextOk,
+                    ]}>
+                    {selectedRequiresCapture ? 'Captura pendiente' : 'Captura completa'}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.riskBadge,
+                    selectedOrder && isPaymentPending(selectedOrder)
+                      ? styles.riskBadgePending
+                      : styles.riskBadgeOk,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.riskBadgeText,
+                      selectedOrder && isPaymentPending(selectedOrder)
+                        ? styles.riskBadgeTextPending
+                        : styles.riskBadgeTextOk,
+                    ]}>
+                    {selectedOrder && isPaymentPending(selectedOrder)
+                      ? 'Cobro pendiente'
+                      : 'Cobro al dia'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {detailFeedback ? (
+              <View
+                style={[
+                  styles.detailFeedbackCard,
+                  detailFeedback.type === 'error' ? styles.detailFeedbackError : styles.detailFeedbackInfo,
+                ]}>
+                <Text style={styles.detailFeedbackText}>{detailFeedback.message}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.detailInfoCard}>
               <Text style={styles.detailLabel}>Telefono</Text>
@@ -770,7 +1115,8 @@ export default function DeliveryHomeScreen() {
                     selectedOrder.estado_pago
                   )
                 }
-                disabled={selectedIsDelivering}>
+                disabled={selectedIsDelivering}
+                hitSlop={CTA_HIT_SLOP}>
                 <Text style={styles.exceptionButtonText}>
                   {selectedIsDelivering ? 'Entregando...' : 'Entregar con excepcion'}
                 </Text>
@@ -778,13 +1124,7 @@ export default function DeliveryHomeScreen() {
             ) : null}
 
             <View style={styles.detailBottomActions}>
-              <TouchableOpacity
-                style={[styles.detailSecondaryButton, !selectedClient?.telefono && styles.buttonDisabled]}
-                onPress={() => void handleCall(selectedClient?.telefono ?? null)}>
-                <Text style={styles.detailSecondaryButtonText}>Llamar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.detailSecondaryButton} onPress={closeDetail}>
+              <TouchableOpacity style={styles.detailSecondaryButton} onPress={closeDetail} hitSlop={CTA_HIT_SLOP}>
                 <Text style={styles.detailSecondaryButtonText}>Volver al listado</Text>
               </TouchableOpacity>
             </View>
@@ -815,7 +1155,7 @@ export default function DeliveryHomeScreen() {
         </View>
       </Modal>
 
-      {fetchErrorMessage ? (
+      {fetchErrorMessage && !isOffline ? (
         <View style={[styles.fetchErrorCard, { bottom: Math.max(insets.bottom, 12) }]}> 
           <Text style={styles.fetchErrorLabel}>Error de actualizacion</Text>
           <Text style={styles.fetchErrorValue}>{fetchErrorMessage}</Text>
@@ -855,6 +1195,65 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#cbd5e1',
+  },
+  offlineCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(251,146,60,0.55)',
+    backgroundColor: 'rgba(255,237,213,0.22)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  offlineTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#fdba74',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  offlineText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ffedd5',
+  },
+  offlineRetryButton: {
+    minHeight: 42,
+    borderRadius: 12,
+    backgroundColor: '#fb923c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  offlineRetryButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#431407',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: 'rgba(15,23,42,0.28)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  filterChipActive: {
+    borderColor: '#f59e0b',
+    backgroundColor: 'rgba(245,158,11,0.22)',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#cbd5e1',
+  },
+  filterChipTextActive: {
+    color: '#fef3c7',
   },
   inlineFeedbackCard: {
     borderRadius: 12,
@@ -1069,6 +1468,79 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  detailTopActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  detailTopActionButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+  },
+  detailTopActionText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1d4ed8',
+  },
+  riskSummaryCard: {
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  riskSummaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  riskBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  riskBadgePending: {
+    backgroundColor: '#ffedd5',
+  },
+  riskBadgeOk: {
+    backgroundColor: '#dcfce7',
+  },
+  riskBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  riskBadgeTextPending: {
+    color: '#c2410c',
+  },
+  riskBadgeTextOk: {
+    color: '#166534',
+  },
+  detailFeedbackCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  detailFeedbackError: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fca5a5',
+  },
+  detailFeedbackInfo: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#93c5fd',
+  },
+  detailFeedbackText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
   },
   detailInfoCard: {
     borderRadius: 16,

@@ -17,6 +17,11 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  getRepartoRuntimeSnapshot,
+  subscribeRepartoRuntime,
+  type RepartoTelemetryEntry,
+} from '@/src/features/reparto/runtime-metrics';
 import { supabase } from '@/src/lib/supabase';
 
 type HealthLevel = 'ok' | 'warn' | 'error';
@@ -57,6 +62,43 @@ function formatRelative(timestamp: Date | null, now: number) {
   return `hace ${Math.floor(minutes / 60)}h`;
 }
 
+function formatRelativeFromIso(timestampIso: string | null, now: number) {
+  if (!timestampIso) {
+    return 'sin datos';
+  }
+
+  const parsed = new Date(timestampIso);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return 'sin datos';
+  }
+
+  return formatRelative(parsed, now);
+}
+
+function formatLatencyMs(value: number | null) {
+  if (value === null) {
+    return 'sin datos';
+  }
+
+  if (value < 1000) {
+    return `${value} ms`;
+  }
+
+  return `${(value / 1000).toFixed(2)} s`;
+}
+
+function formatTelemetryEntry(entry: RepartoTelemetryEntry, now: number) {
+  const at = formatRelativeFromIso(entry.at, now);
+  const base = `${entry.action} (${at})`;
+
+  if (!entry.detail) {
+    return base;
+  }
+
+  return `${base}: ${entry.detail}`;
+}
+
 export default function EstadoScreen() {
   const [isChecking, setIsChecking] = useState(true);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
@@ -67,6 +109,7 @@ export default function EstadoScreen() {
     'idle' | 'registering' | 'ready' | 'error'
   >('idle');
   const [pushRegistrationMessage, setPushRegistrationMessage] = useState('Sin registrar');
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState(() => getRepartoRuntimeSnapshot());
 
   const registerPushToken = useCallback(async () => {
     setPushRegistrationStatus('registering');
@@ -123,6 +166,7 @@ export default function EstadoScreen() {
         },
         {
           onConflict: 'expo_push_token',
+          ignoreDuplicates: true,
         }
       );
 
@@ -266,6 +310,14 @@ export default function EstadoScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = subscribeRepartoRuntime((snapshot) => {
+      setRuntimeSnapshot(snapshot);
+    });
+
+    return unsubscribe;
+  }, []);
+
   const globalState = useMemo(() => {
     if (statuses.some((item) => item.level === 'error')) {
       return { label: 'Atencion requerida', level: 'error' as const };
@@ -353,6 +405,49 @@ export default function EstadoScreen() {
           )}
 
           {checkError ? <Text style={styles.errorText}>{checkError}</Text> : null}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Metricas de reparto (runtime)</Text>
+
+          <View style={styles.statusCard}>
+            <Text style={styles.statusLabel}>Latencia ultima actualizacion de pedidos</Text>
+            <Text style={styles.statusValue}>{formatLatencyMs(runtimeSnapshot.lastOrdersRefreshLatencyMs)}</Text>
+          </View>
+
+          <View style={styles.statusCard}>
+            <Text style={styles.statusLabel}>Ultima sync exitosa</Text>
+            <Text style={styles.statusValue}>
+              {formatRelativeFromIso(runtimeSnapshot.lastSuccessfulSyncAt, relativeClock)}
+            </Text>
+          </View>
+
+          <View style={styles.statusCard}>
+            <Text style={styles.statusLabel}>Ultimo evento realtime</Text>
+            <Text style={styles.statusValue}>
+              {formatRelativeFromIso(runtimeSnapshot.lastRealtimeEventAt, relativeClock)}
+            </Text>
+          </View>
+
+          <Text style={styles.statusLabel}>Ultimas acciones criticas</Text>
+          {runtimeSnapshot.telemetry.length === 0 ? (
+            <View style={styles.statusCard}>
+              <Text style={styles.statusValue}>Sin eventos registrados</Text>
+            </View>
+          ) : (
+            runtimeSnapshot.telemetry.slice(0, 8).map((entry) => (
+              <View key={entry.id} style={styles.telemetryCard}>
+                <Text style={styles.telemetryAction}>{formatTelemetryEntry(entry, relativeClock)}</Text>
+                <Text
+                  style={[
+                    styles.telemetryStatus,
+                    entry.status === 'ok' ? styles.telemetryStatusOk : styles.telemetryStatusError,
+                  ]}>
+                  {entry.status === 'ok' ? 'ok' : 'error'}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={styles.section}>
@@ -514,6 +609,35 @@ const styles = StyleSheet.create({
     color: '#b45309',
   },
   statusValueError: {
+    color: '#b91c1c',
+  },
+  telemetryCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  telemetryAction: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  telemetryStatus: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  telemetryStatusOk: {
+    color: '#047857',
+  },
+  telemetryStatusError: {
     color: '#b91c1c',
   },
   errorText: {

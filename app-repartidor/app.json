@@ -14,7 +14,6 @@
     },
     "android": {
       "package": "com.polleriamagon.repartidor",
-      "googleServicesFile": "./google-services.json",
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",

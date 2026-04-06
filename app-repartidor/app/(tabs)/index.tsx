@@ -44,6 +44,14 @@ type DeliveryOrder = {
   clientes: DeliveryClient | null;
 };
 
+type DeliverPayload = {
+  estado: 'entregado';
+  estado_pago?: PaymentStatus;
+  entrega_con_excepcion: boolean;
+  motivo_entrega_excepcion: string | null;
+  entregado_en: string;
+};
+
 const GOOGLE_MAPS_BASE_URL = 'https://www.google.com/maps/search/?api=1&query=';
 
 Notifications.setNotificationHandler({
@@ -424,8 +432,11 @@ export default function DeliveryHomeScreen() {
       setDeliveringOrderId(pedidoId);
 
       try {
-        const payload: { estado: 'entregado'; estado_pago?: PaymentStatus } = {
+        const payload: DeliverPayload = {
           estado: 'entregado',
+          entrega_con_excepcion: false,
+          motivo_entrega_excepcion: null,
+          entregado_en: new Date().toISOString(),
         };
 
         if (metodoPago === 'efectivo' && estadoPago === 'pendiente') {
@@ -446,6 +457,70 @@ export default function DeliveryHomeScreen() {
       } finally {
         setDeliveringOrderId(null);
       }
+    },
+    []
+  );
+
+  const handleEntregarConExcepcion = useCallback(
+    (pedidoId: string, metodoPago: string | null, estadoPago: PaymentStatus | null) => {
+      Alert.alert(
+        'Confirmar entrega con excepcion',
+        'No hay captura completa (GPS/foto). Esta accion queda registrada para auditoria. ¿Deseas continuar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Continuar',
+            style: 'destructive',
+            onPress: () => {
+              Alert.alert(
+                'Ultima confirmacion',
+                'Se marcara como entregado con excepcion por captura omitida del repartidor.',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Confirmar entrega',
+                    style: 'destructive',
+                    onPress: () => {
+                      setDeliveringOrderId(pedidoId);
+
+                      void (async () => {
+                        try {
+                          const payload: DeliverPayload = {
+                            estado: 'entregado',
+                            entrega_con_excepcion: true,
+                            motivo_entrega_excepcion: 'captura_omitida_repartidor',
+                            entregado_en: new Date().toISOString(),
+                          };
+
+                          if (metodoPago === 'efectivo' && estadoPago === 'pendiente') {
+                            payload.estado_pago = 'pagado';
+                          }
+
+                          const { error } = await supabase.from('pedidos').update(payload).eq('id', pedidoId);
+
+                          if (error) {
+                            throw error;
+                          }
+
+                          setActiveOrders((currentOrders) =>
+                            currentOrders.filter((order) => order.id !== pedidoId)
+                          );
+                          Alert.alert('Pedido entregado con excepcion', 'La entrega quedo registrada con trazabilidad.');
+                        } catch (error) {
+                          console.error('Error updating delivered order with exception:', error);
+                          Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
+                        } finally {
+                          setDeliveringOrderId(null);
+                        }
+                      })();
+                    },
+                  },
+                ]
+              );
+            },
+          },
+        ]
+      );
     },
     []
   );
@@ -561,11 +636,28 @@ export default function DeliveryHomeScreen() {
               disabled={requiresCapture || isDelivering}>
               <Text style={styles.primaryButtonText}>{isDelivering ? 'Entregando...' : 'Entregar'}</Text>
             </TouchableOpacity>
+
+            {requiresCapture ? (
+              <TouchableOpacity
+                style={[styles.exceptionButton, isDelivering && styles.buttonDisabled]}
+                onPress={() => handleEntregarConExcepcion(item.id, item.metodo_pago, item.estado_pago)}
+                disabled={isDelivering}>
+                <Text style={styles.exceptionButtonText}>Entregar con excepcion</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       );
     },
-    [capturingClientId, deliveringOrderId, handleCall, handleCaptureData, handleEntregar, handleOpenRoute]
+    [
+      capturingClientId,
+      deliveringOrderId,
+      handleCall,
+      handleCaptureData,
+      handleEntregar,
+      handleEntregarConExcepcion,
+      handleOpenRoute,
+    ]
   );
 
   const emptyMessage = useMemo(() => {
@@ -1090,6 +1182,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#3730a3',
+  },
+  exceptionButton: {
+    minHeight: 50,
+    borderRadius: 18,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fb923c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  exceptionButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#c2410c',
   },
   buttonDisabled: {
     opacity: 0.6,

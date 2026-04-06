@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -15,11 +15,8 @@ import {
   View,
 } from 'react-native';
 import { decode } from 'base64-arraybuffer';
-import Constants from 'expo-constants';
-import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '@/src/lib/supabase';
@@ -57,16 +54,24 @@ type InlineFeedback = {
   message: string;
 };
 
-const GOOGLE_MAPS_BASE_URL = 'https://www.google.com/maps/search/?api=1&query=';
+type HeaderProps = {
+  totalOrders: number;
+  lastUpdatedAt: Date | null;
+  inlineFeedback: InlineFeedback | null;
+};
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+type OrderCardProps = {
+  item: DeliveryOrder;
+  capturingClientId: string | null;
+  deliveringOrderId: string | null;
+  onCapture: (clienteId: string) => void;
+  onDeliver: (pedidoId: string, metodoPago: string | null, estadoPago: PaymentStatus | null) => void;
+  onRoute: (client: DeliveryClient | null) => void;
+  onCall: (phone: string | null) => void;
+  onOpenDetail: (order: DeliveryOrder) => void;
+};
+
+const GOOGLE_MAPS_BASE_URL = 'https://www.google.com/maps/search/?api=1&query=';
 
 function formatCurrency(value: number | null) {
   return new Intl.NumberFormat('es-MX', {
@@ -100,18 +105,6 @@ function getErrorMessage(error: unknown) {
   }
 
   return 'Verifica permisos, conexion e intenta nuevamente.';
-}
-
-function formatPaymentMethod(value: string | null) {
-  if (value === 'efectivo') {
-    return 'Efectivo';
-  }
-
-  if (value === 'transferencia') {
-    return 'Transferencia';
-  }
-
-  return 'Sin definir';
 }
 
 function normalizeOrders(rawOrders: unknown[]): DeliveryOrder[] {
@@ -158,6 +151,143 @@ function formatRelativeUpdate(timestamp: Date | null, now: number) {
   return `hace ${hours}h`;
 }
 
+const DeliveryHeader = memo(function DeliveryHeader({
+  totalOrders,
+  lastUpdatedAt,
+  inlineFeedback,
+}: HeaderProps) {
+  const [clock, setClock] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setClock(Date.now());
+    }, 30000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  return (
+    <View style={styles.headerCard}>
+      <Text style={styles.headerTitle}>Reparto</Text>
+      <View style={styles.headerMetaRow}>
+        <Text style={styles.headerMetaItem}>Pedidos: {totalOrders}</Text>
+        <Text style={styles.headerMetaItem}>Actualizado {formatRelativeUpdate(lastUpdatedAt, clock)}</Text>
+      </View>
+
+      {inlineFeedback ? (
+        <View
+          style={[
+            styles.inlineFeedbackCard,
+            inlineFeedback.type === 'success'
+              ? styles.inlineFeedbackCardSuccess
+              : styles.inlineFeedbackCardInfo,
+          ]}>
+          <Text style={styles.inlineFeedbackText}>{inlineFeedback.message}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
+const OrderCard = memo(function OrderCard({
+  item,
+  capturingClientId,
+  deliveringOrderId,
+  onCapture,
+  onDeliver,
+  onRoute,
+  onCall,
+  onOpenDetail,
+}: OrderCardProps) {
+  const client = item.clientes;
+  const requiresCapture = !client?.latitud || !client?.url_foto_fachada;
+  const isCapturing = capturingClientId === client?.id;
+  const isDelivering = deliveringOrderId === item.id;
+  const canOpenRoute = Boolean(client?.latitud && client?.longitud);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTopRow}>
+        <View style={styles.cardIdentity}>
+          <Text style={styles.cardEyebrow}>Pedido #{item.id.slice(0, 8)}</Text>
+          <Text style={styles.cardTitle}>{client?.nombre ?? 'Cliente sin asignar'}</Text>
+        </View>
+
+        <View style={styles.cardAmountWrap}>
+          <Text style={styles.cardAmount}>{formatCurrency(item.total)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.badgesRow}>
+        <View
+          style={[
+            styles.badge,
+            item.estado_pago === 'pagado' ? styles.badgePaid : styles.badgePending,
+          ]}>
+          <Text
+            style={[
+              styles.badgeText,
+              item.estado_pago === 'pagado' ? styles.badgeTextPaid : styles.badgeTextPending,
+            ]}>
+            {item.estado_pago === 'pagado' ? 'Pago: pagado' : 'Pago: pendiente'}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.badge,
+            requiresCapture ? styles.badgeCapturePending : styles.badgeCaptureReady,
+          ]}>
+          <Text
+            style={[
+              styles.badgeText,
+              requiresCapture ? styles.badgeTextCapturePending : styles.badgeTextCaptureReady,
+            ]}>
+            {requiresCapture ? 'Captura: pendiente' : 'Captura: completa'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.actions}>
+        {requiresCapture ? (
+          <TouchableOpacity
+            style={[styles.primaryButton, styles.captureButton, isCapturing && styles.buttonDisabled]}
+            onPress={() => client?.id && onCapture(client.id)}
+            disabled={!client?.id || isCapturing}>
+            <Text style={styles.primaryButtonText}>{isCapturing ? 'Capturando...' : 'Capturar'}</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.primaryButton, isDelivering && styles.buttonDisabled]}
+            onPress={() => onDeliver(item.id, item.metodo_pago, item.estado_pago)}
+            disabled={isDelivering}>
+            <Text style={styles.primaryButtonText}>{isDelivering ? 'Entregando...' : 'Entregar'}</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.secondaryRow}>
+          <TouchableOpacity
+            style={[styles.secondaryButton, !canOpenRoute && styles.buttonDisabled]}
+            onPress={() => onRoute(client)}
+            disabled={!canOpenRoute}>
+            <Text style={styles.secondaryButtonText}>Ruta</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => onCall(client?.telefono ?? null)}>
+            <Text style={styles.secondaryButtonText}>Llamar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={styles.detailButton} onPress={() => onOpenDetail(item)}>
+          <Text style={styles.detailButtonText}>Ver detalle</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
 export default function DeliveryHomeScreen() {
   const insets = useSafeAreaInsets();
   const [activeOrders, setActiveOrders] = useState<DeliveryOrder[]>([]);
@@ -165,17 +295,10 @@ export default function DeliveryHomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [capturingClientId, setCapturingClientId] = useState<string | null>(null);
   const [deliveringOrderId, setDeliveringOrderId] = useState<string | null>(null);
-  const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [fetchErrorMessage, setFetchErrorMessage] = useState<string | null>(null);
-  const [pushRegistrationStatus, setPushRegistrationStatus] = useState<
-    'idle' | 'registering' | 'ready' | 'error'
-  >('idle');
-  const [pushRegistrationMessage, setPushRegistrationMessage] = useState(
-    'Sin registrar',
-  );
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [relativeClock, setRelativeClock] = useState(() => Date.now());
   const [inlineFeedback, setInlineFeedback] = useState<InlineFeedback | null>(null);
 
   const fetchPedidos = useCallback(async () => {
@@ -215,85 +338,6 @@ export default function DeliveryHomeScreen() {
   }, [inlineFeedback]);
 
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      setRelativeClock(Date.now());
-    }, 30000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []);
-
-  const registerPushToken = useCallback(async () => {
-    setPushRegistrationStatus('registering');
-    setPushRegistrationMessage('Registrando dispositivo...');
-
-    if (!Device.isDevice) {
-      console.log('Push notifications require a physical device.');
-      setPushRegistrationStatus('error');
-      setPushRegistrationMessage('Solo disponible en dispositivo fisico');
-      return;
-    }
-
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-
-    if (!projectId) {
-      console.warn('Expo projectId not found. Push token registration skipped.');
-      setPushRegistrationStatus('error');
-      setPushRegistrationMessage('Falta projectId de Expo');
-      return;
-    }
-
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#ea580c',
-      });
-    }
-
-    const permission = await Notifications.getPermissionsAsync();
-    let finalStatus = permission.status;
-
-    if (finalStatus !== 'granted') {
-      const request = await Notifications.requestPermissionsAsync();
-      finalStatus = request.status;
-    }
-
-    if (finalStatus !== 'granted') {
-      console.warn('Push notification permission denied.');
-      setPushRegistrationStatus('error');
-      setPushRegistrationMessage('Permiso de notificaciones denegado');
-      return;
-    }
-
-    const expoPushToken = await Notifications.getExpoPushTokenAsync({ projectId });
-
-    const { error } = await supabase.from('repartidor_push_tokens').upsert(
-      {
-        expo_push_token: expoPushToken.data,
-        dispositivo_nombre: Device.deviceName ?? null,
-        plataforma: Platform.OS,
-        activo: true,
-        actualizado_en: new Date().toISOString(),
-      },
-      {
-        onConflict: 'expo_push_token',
-      }
-    );
-
-    if (error) {
-      throw error;
-    }
-
-    console.log('Expo push token registrado:', expoPushToken.data);
-    setPushRegistrationStatus('ready');
-    setPushRegistrationMessage(`Push listo: ${expoPushToken.data.slice(0, 18)}...`);
-  }, []);
-
-  useEffect(() => {
     const load = async () => {
       try {
         await fetchPedidos();
@@ -308,19 +352,12 @@ export default function DeliveryHomeScreen() {
     };
 
     void load();
-
-    void registerPushToken().catch((error) => {
-      console.warn('Push registration skipped:', error);
-      setPushRegistrationStatus('error');
-      setPushRegistrationMessage(getErrorMessage(error));
-    });
-  }, [fetchPedidos, registerPushToken]);
+  }, [fetchPedidos]);
 
   useEffect(() => {
     const subscription = supabase
       .channel('public:pedidos')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => {
-        console.log('Realtime pedidos: cambio recibido');
         Vibration.vibrate();
         void fetchPedidos().catch((error) => {
           console.error('Error refreshing delivery orders from realtime:', error);
@@ -328,9 +365,6 @@ export default function DeliveryHomeScreen() {
         });
       })
       .subscribe((status) => {
-        console.log('Realtime pedidos status:', status);
-        setRealtimeConnected(status === 'SUBSCRIBED');
-
         if (status === 'SUBSCRIBED') {
           void fetchPedidos().catch((error) => {
             console.error('Error refreshing delivery orders on subscribe:', error);
@@ -443,7 +477,6 @@ export default function DeliveryHomeScreen() {
           throw updateError;
         }
 
-        Alert.alert('Datos actualizados', 'Datos del cliente actualizados exitosamente.');
         showInlineFeedback({
           type: 'success',
           message: 'Captura guardada. Ya podes continuar con la entrega.',
@@ -511,11 +544,11 @@ export default function DeliveryHomeScreen() {
         }
 
         setActiveOrders((currentOrders) => currentOrders.filter((order) => order.id !== pedidoId));
+        setSelectedOrder((currentSelected) => (currentSelected?.id === pedidoId ? null : currentSelected));
         showInlineFeedback({
           type: 'success',
           message: 'Entrega registrada correctamente.',
         });
-        Alert.alert('Pedido entregado', 'La entrega se registro correctamente.');
       } catch (error) {
         console.error('Error updating delivered order:', error);
         Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
@@ -561,11 +594,13 @@ export default function DeliveryHomeScreen() {
                   setActiveOrders((currentOrders) =>
                     currentOrders.filter((order) => order.id !== pedidoId)
                   );
+                  setSelectedOrder((currentSelected) =>
+                    currentSelected?.id === pedidoId ? null : currentSelected
+                  );
                   showInlineFeedback({
                     type: 'info',
                     message: 'Entrega con excepcion registrada para auditoria.',
                   });
-                  Alert.alert('Pedido entregado con excepcion', 'La entrega quedo registrada con trazabilidad.');
                 } catch (error) {
                   console.error('Error updating delivered order with exception:', error);
                   Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
@@ -581,144 +616,13 @@ export default function DeliveryHomeScreen() {
     [showInlineFeedback]
   );
 
-  const renderOrder = useCallback(
-    ({ item }: { item: DeliveryOrder }) => {
-      const client = item.clientes;
-      const requiresCapture = !client?.latitud || !client?.url_foto_fachada;
-      const isCapturing = capturingClientId === client?.id;
-      const isDelivering = deliveringOrderId === item.id;
-      const canOpenRoute = Boolean(client?.latitud && client?.longitud);
+  const handleOpenDetail = useCallback((order: DeliveryOrder) => {
+    setSelectedOrder(order);
+  }, []);
 
-      return (
-        <View style={styles.card}>
-          <View style={styles.cardTop}>
-            <View style={styles.cardHeader}>
-              <View style={styles.titleGroup}>
-                <Text style={styles.cardEyebrow}>Pedido #{item.id.slice(0, 8)}</Text>
-                <Text style={styles.cardTitle}>{client?.nombre ?? 'Cliente sin asignar'}</Text>
-              </View>
-
-              <View
-                style={[
-                  styles.paymentBadge,
-                  item.estado_pago === 'pagado' ? styles.paymentBadgePaid : styles.paymentBadgePending,
-                ]}>
-                <Text
-                  style={[
-                    styles.paymentBadgeText,
-                    item.estado_pago === 'pagado' ? styles.paymentBadgeTextPaid : styles.paymentBadgeTextPending,
-                  ]}>
-                  {item.estado_pago === 'pagado' ? 'Pagado' : 'Pendiente'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.summaryRow}>
-              <View style={styles.summaryTile}>
-                <Text style={styles.summaryLabel}>Cobro</Text>
-                <Text style={styles.summaryValue}>{formatCurrency(item.total)}</Text>
-              </View>
-
-              <View style={styles.summaryTile}>
-                <Text style={styles.summaryLabel}>Metodo</Text>
-                <Text style={styles.summaryValue}>{formatPaymentMethod(item.metodo_pago)}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Text style={styles.label}>Telefono</Text>
-            <Text style={styles.value}>{client?.telefono ?? 'No disponible'}</Text>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Text style={styles.label}>Direccion / referencias</Text>
-            <Text style={styles.notesText}>
-              {client?.notas_entrega?.trim() || 'Sin direccion o referencias registradas'}
-            </Text>
-          </View>
-
-          {requiresCapture ? (
-            <View style={styles.captureAlert}>
-              <Text style={styles.captureAlertTitle}>Nuevo cliente. Requiere captura</Text>
-              <Text style={styles.captureAlertText}>
-                Antes de entregar, registra GPS y foto de fachada para dejar la direccion confirmada.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.photoSection}>
-              <TouchableOpacity
-                style={styles.photoPreviewButton}
-                onPress={() => setPreviewImageUrl(client.url_foto_fachada ?? null)}
-                activeOpacity={0.9}>
-                <Image source={{ uri: client.url_foto_fachada ?? undefined }} style={styles.photo} />
-                <View style={styles.photoHintBadge}>
-                  <Text style={styles.photoHintText}>Ampliar</Text>
-                </View>
-              </TouchableOpacity>
-
-              <View style={styles.photoActions}>
-                <TouchableOpacity
-                  style={styles.previewButton}
-                  onPress={() => setPreviewImageUrl(client.url_foto_fachada ?? null)}>
-                  <Text style={styles.previewButtonText}>Ver foto completa</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          <View style={styles.actions}>
-            {requiresCapture ? (
-              <TouchableOpacity
-                style={[styles.primaryButton, styles.captureButton, isCapturing && styles.buttonDisabled]}
-                onPress={() => client?.id && void handleCaptureData(client.id)}
-                disabled={!client?.id || isCapturing}>
-                <Text style={styles.primaryButtonText}>
-                  {isCapturing ? 'Capturando...' : 'Tomar foto y guardar GPS'}
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.primaryButton, isDelivering && styles.buttonDisabled]}
-                onPress={() => void handleEntregar(item.id, item.metodo_pago, item.estado_pago)}
-                disabled={isDelivering}>
-                <Text style={styles.primaryButtonText}>{isDelivering ? 'Entregando...' : 'Entregar'}</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[styles.secondaryButton, !canOpenRoute && styles.buttonDisabled]}
-              onPress={() => void handleOpenRoute(client)}
-              disabled={!canOpenRoute}>
-              <Text style={styles.secondaryButtonText}>Ruta</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => void handleCall(client?.telefono ?? null)}>
-              <Text style={styles.secondaryButtonText}>Llamar</Text>
-            </TouchableOpacity>
-
-            {requiresCapture ? (
-              <TouchableOpacity
-                style={[styles.exceptionButton, isDelivering && styles.buttonDisabled]}
-                onPress={() => handleEntregarConExcepcion(item.id, item.metodo_pago, item.estado_pago)}
-                disabled={isDelivering}>
-                <Text style={styles.exceptionButtonText}>Entregar con excepcion</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-      );
-    },
-    [
-      capturingClientId,
-      deliveringOrderId,
-      handleCall,
-      handleCaptureData,
-      handleEntregar,
-      handleEntregarConExcepcion,
-      handleOpenRoute,
-    ]
-  );
+  const closeDetail = useCallback(() => {
+    setSelectedOrder(null);
+  }, []);
 
   const emptyMessage = useMemo(() => {
     if (isLoading) {
@@ -732,94 +636,52 @@ export default function DeliveryHomeScreen() {
 
   const listHeader = useMemo(
     () => (
-      <View style={styles.headerCard}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.headerEyebrow}>Reparto activo</Text>
-          <Text style={styles.headerTitle}>Pedidos en camino</Text>
-          <Text style={styles.headerSubtitle}>
-            Gestiona entregas, cobro y captura de clientes nuevos desde una sola pantalla.
-          </Text>
-          <Text style={styles.headerUpdatedText}>
-            Actualizado {formatRelativeUpdate(lastUpdatedAt, relativeClock)}
-          </Text>
-        </View>
+      <DeliveryHeader
+        totalOrders={activeOrders.length}
+        lastUpdatedAt={lastUpdatedAt}
+        inlineFeedback={inlineFeedback}
+      />
+    ),
+    [activeOrders.length, inlineFeedback, lastUpdatedAt]
+  );
 
-        {inlineFeedback ? (
-          <View
-            style={[
-              styles.inlineFeedbackCard,
-              inlineFeedback.type === 'success'
-                ? styles.inlineFeedbackCardSuccess
-                : styles.inlineFeedbackCardInfo,
-            ]}>
-            <Text style={styles.inlineFeedbackText}>{inlineFeedback.message}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.headerStats}>
-          <View style={styles.headerStatCard}>
-            <Text style={styles.headerStatLabel}>Pedidos</Text>
-            <Text style={styles.headerStatValue}>{activeOrders.length}</Text>
-          </View>
-
-          <View
-            style={[
-              styles.headerStatCard,
-              realtimeConnected ? styles.connectionCardOnline : styles.connectionCardOffline,
-            ]}>
-            <Text style={styles.headerStatLabel}>Tiempo real</Text>
-            <Text style={styles.headerStatValue}>{realtimeConnected ? 'Activo' : 'Polling'}</Text>
-          </View>
-        </View>
-
-        <View
-          style={[
-            styles.pushCard,
-            pushRegistrationStatus === 'ready'
-              ? styles.pushCardReady
-              : pushRegistrationStatus === 'error'
-                ? styles.pushCardError
-                : styles.pushCardNeutral,
-          ]}>
-          <View style={styles.pushCardCopy}>
-            <Text style={styles.pushCardLabel}>Push del dispositivo</Text>
-            <Text style={styles.pushCardValue}>{pushRegistrationMessage}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.pushRetryButton}
-            onPress={() => void registerPushToken()}
-            disabled={pushRegistrationStatus === 'registering'}>
-            <Text style={styles.pushRetryButtonText}>
-              {pushRegistrationStatus === 'registering'
-                ? 'Registrando...'
-                : pushRegistrationStatus === 'ready'
-                  ? 'Actualizar'
-                  : 'Registrar'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {fetchErrorMessage ? (
-          <View style={styles.fetchErrorCard}>
-            <Text style={styles.fetchErrorLabel}>Error de carga</Text>
-            <Text style={styles.fetchErrorValue}>{fetchErrorMessage}</Text>
-          </View>
-        ) : null}
-      </View>
+  const renderOrder = useCallback(
+    ({ item }: { item: DeliveryOrder }) => (
+      <OrderCard
+        item={item}
+        capturingClientId={capturingClientId}
+        deliveringOrderId={deliveringOrderId}
+        onCapture={(clienteId) => {
+          void handleCaptureData(clienteId);
+        }}
+        onDeliver={(pedidoId, metodoPago, estadoPago) => {
+          void handleEntregar(pedidoId, metodoPago, estadoPago);
+        }}
+        onRoute={(client) => {
+          void handleOpenRoute(client);
+        }}
+        onCall={(phone) => {
+          void handleCall(phone);
+        }}
+        onOpenDetail={handleOpenDetail}
+      />
     ),
     [
-      activeOrders.length,
-      fetchErrorMessage,
-      inlineFeedback,
-      lastUpdatedAt,
-      pushRegistrationMessage,
-      pushRegistrationStatus,
-      relativeClock,
-      realtimeConnected,
-      registerPushToken,
+      capturingClientId,
+      deliveringOrderId,
+      handleCall,
+      handleCaptureData,
+      handleEntregar,
+      handleOpenDetail,
+      handleOpenRoute,
     ]
   );
+
+  const selectedClient = selectedOrder?.clientes ?? null;
+  const selectedRequiresCapture = Boolean(
+    selectedOrder && (!selectedClient?.latitud || !selectedClient?.url_foto_fachada)
+  );
+  const selectedIsDelivering = selectedOrder ? deliveringOrderId === selectedOrder.id : false;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -837,8 +699,98 @@ export default function DeliveryHomeScreen() {
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />}
           ListEmptyComponent={<Text style={styles.emptyText}>{emptyMessage}</Text>}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          updateCellsBatchingPeriod={60}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
         />
       </View>
+
+      <Modal
+        visible={Boolean(selectedOrder)}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={closeDetail}>
+        <SafeAreaView style={styles.detailSafeArea} edges={['top', 'left', 'right', 'bottom']}>
+          <View style={styles.detailContainer}>
+            <View style={styles.detailHeader}>
+              <View>
+                <Text style={styles.detailEyebrow}>Pedido #{selectedOrder?.id.slice(0, 8)}</Text>
+                <Text style={styles.detailTitle}>{selectedClient?.nombre ?? 'Cliente sin asignar'}</Text>
+              </View>
+              <TouchableOpacity style={styles.detailCloseButton} onPress={closeDetail}>
+                <Text style={styles.detailCloseText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.detailInfoCard}>
+              <Text style={styles.detailLabel}>Telefono</Text>
+              <Text style={styles.detailValue}>{selectedClient?.telefono ?? 'No disponible'}</Text>
+            </View>
+
+            <View style={styles.detailInfoCard}>
+              <Text style={styles.detailLabel}>Direccion / referencias</Text>
+              <Text style={styles.detailNotesText}>
+                {selectedClient?.notas_entrega?.trim() || 'Sin direccion o referencias registradas'}
+              </Text>
+            </View>
+
+            {selectedClient?.url_foto_fachada ? (
+              <View style={styles.detailInfoCard}>
+                <Text style={styles.detailLabel}>Foto de fachada</Text>
+                <TouchableOpacity
+                  style={styles.detailPhotoButton}
+                  onPress={() => setPreviewImageUrl(selectedClient.url_foto_fachada)}
+                  activeOpacity={0.9}>
+                  <Image
+                    source={{ uri: selectedClient.url_foto_fachada }}
+                    style={styles.detailPhoto}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.detailPhotoBadge}>
+                    <Text style={styles.detailPhotoBadgeText}>Ampliar</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.detailInfoCard}>
+                <Text style={styles.detailLabel}>Foto de fachada</Text>
+                <Text style={styles.detailMissingPhoto}>Sin foto registrada para este cliente.</Text>
+              </View>
+            )}
+
+            {selectedRequiresCapture && selectedOrder ? (
+              <TouchableOpacity
+                style={[styles.exceptionButton, selectedIsDelivering && styles.buttonDisabled]}
+                onPress={() =>
+                  handleEntregarConExcepcion(
+                    selectedOrder.id,
+                    selectedOrder.metodo_pago,
+                    selectedOrder.estado_pago
+                  )
+                }
+                disabled={selectedIsDelivering}>
+                <Text style={styles.exceptionButtonText}>
+                  {selectedIsDelivering ? 'Entregando...' : 'Entregar con excepcion'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={styles.detailBottomActions}>
+              <TouchableOpacity
+                style={[styles.detailSecondaryButton, !selectedClient?.telefono && styles.buttonDisabled]}
+                onPress={() => void handleCall(selectedClient?.telefono ?? null)}>
+                <Text style={styles.detailSecondaryButtonText}>Llamar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.detailSecondaryButton} onPress={closeDetail}>
+                <Text style={styles.detailSecondaryButtonText}>Volver al listado</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       <Modal
         visible={Boolean(previewImageUrl)}
@@ -862,6 +814,13 @@ export default function DeliveryHomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {fetchErrorMessage ? (
+        <View style={[styles.fetchErrorCard, { bottom: Math.max(insets.bottom, 12) }]}> 
+          <Text style={styles.fetchErrorLabel}>Error de actualizacion</Text>
+          <Text style={styles.fetchErrorValue}>{fetchErrorMessage}</Text>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -876,149 +835,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   headerCard: {
-    marginBottom: 18,
+    marginBottom: 14,
     marginTop: 8,
-    borderRadius: 26,
+    borderRadius: 20,
     backgroundColor: '#0f172a',
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 5,
-    gap: 16,
-  },
-  headerCopy: {
-    gap: 6,
-  },
-  headerEyebrow: {
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    color: '#f59e0b',
-  },
-  headerStats: {
-    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     gap: 10,
-  },
-  pushCard: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderWidth: 1,
-    gap: 12,
-  },
-  pushCardNeutral: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  pushCardReady: {
-    backgroundColor: 'rgba(16,185,129,0.14)',
-    borderColor: 'rgba(16,185,129,0.24)',
-  },
-  pushCardError: {
-    backgroundColor: 'rgba(239,68,68,0.14)',
-    borderColor: 'rgba(239,68,68,0.24)',
-  },
-  pushCardCopy: {
-    gap: 4,
-  },
-  pushCardLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#cbd5e1',
-  },
-  pushCardValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
-    lineHeight: 20,
-  },
-  pushRetryButton: {
-    minHeight: 42,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  pushRetryButtonText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  fetchErrorCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.28)',
-    backgroundColor: 'rgba(251,191,36,0.12)',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 4,
-  },
-  fetchErrorLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#fde68a',
-  },
-  fetchErrorValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#fef3c7',
-  },
-  headerStatCard: {
-    flex: 1,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  connectionCardOnline: {
-    borderColor: 'rgba(16,185,129,0.22)',
-    backgroundColor: 'rgba(16,185,129,0.12)',
-  },
-  connectionCardOffline: {
-    borderColor: 'rgba(245,158,11,0.22)',
-    backgroundColor: 'rgba(245,158,11,0.12)',
-  },
-  headerStatLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#cbd5e1',
-  },
-  headerStatValue: {
-    marginTop: 6,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '800',
     color: '#ffffff',
   },
-  headerSubtitle: {
-    fontSize: 15,
-    color: '#cbd5e1',
-    lineHeight: 20,
+  headerMetaRow: {
+    gap: 4,
   },
-  headerUpdatedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#94a3b8',
+  headerMetaItem: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#cbd5e1',
   },
   inlineFeedbackCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1037,7 +876,7 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
   },
   listContent: {
-    gap: 14,
+    gap: 12,
   },
   emptyContainer: {
     flexGrow: 1,
@@ -1052,199 +891,92 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 14,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 4,
-    gap: 12,
-  },
-  cardTop: {
-    borderRadius: 22,
-    backgroundColor: '#f8fafc',
+    borderRadius: 18,
     padding: 14,
-    gap: 14,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
     gap: 12,
   },
-  titleGroup: {
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cardIdentity: {
     flex: 1,
+    gap: 4,
   },
   cardEyebrow: {
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 1,
-    color: '#f97316',
+    letterSpacing: 0.9,
+    color: '#ea580c',
   },
   cardTitle: {
-    marginTop: 6,
-    fontSize: 21,
+    fontSize: 20,
     fontWeight: '800',
     color: '#0f172a',
   },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 10,
+  cardAmountWrap: {
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  summaryTile: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  summaryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#64748b',
-  },
-  summaryValue: {
-    marginTop: 6,
+  cardAmount: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0f172a',
   },
-  paymentBadge: {
+  badgesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  badge: {
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  paymentBadgePaid: {
+  badgePaid: {
     backgroundColor: '#dcfce7',
   },
-  paymentBadgePending: {
+  badgePending: {
     backgroundColor: '#fee2e2',
   },
-  paymentBadgeText: {
+  badgeCaptureReady: {
+    backgroundColor: '#dbeafe',
+  },
+  badgeCapturePending: {
+    backgroundColor: '#fff7ed',
+  },
+  badgeText: {
     fontSize: 12,
     fontWeight: '700',
   },
-  paymentBadgeTextPaid: {
+  badgeTextPaid: {
     color: '#166534',
   },
-  paymentBadgeTextPending: {
+  badgeTextPending: {
     color: '#b91c1c',
   },
-  infoCard: {
-    borderRadius: 20,
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    gap: 6,
+  badgeTextCaptureReady: {
+    color: '#1d4ed8',
   },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: '#6b7280',
-  },
-  value: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  notesText: {
-    fontSize: 15,
-    color: '#334155',
-    lineHeight: 22,
-  },
-  captureAlert: {
-    borderRadius: 20,
-    backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#fdba74',
-    padding: 15,
-    gap: 6,
-  },
-  captureAlertTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+  badgeTextCapturePending: {
     color: '#c2410c',
-  },
-  captureAlertText: {
-    fontSize: 14,
-    color: '#9a3412',
-    lineHeight: 20,
-  },
-  photoSection: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 12,
-    borderRadius: 20,
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  photo: {
-    width: 82,
-    height: 82,
-    borderRadius: 20,
-    backgroundColor: '#e5e7eb',
-  },
-  photoPreviewButton: {
-    position: 'relative',
-    width: 82,
-    height: 82,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  photoHintBadge: {
-    position: 'absolute',
-    left: 6,
-    right: 6,
-    bottom: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(15,23,42,0.76)',
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-  },
-  photoHintText: {
-    fontSize: 10,
-    fontWeight: '700',
-    textAlign: 'center',
-    color: '#ffffff',
-  },
-  photoActions: {
-    flex: 1,
-    gap: 10,
-    justifyContent: 'center',
-  },
-  previewButton: {
-    minHeight: 44,
-    borderRadius: 16,
-    backgroundColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  previewButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
   },
   actions: {
     gap: 10,
-    marginTop: 4,
   },
   primaryButton: {
-    minHeight: 54,
-    borderRadius: 18,
+    minHeight: 56,
+    borderRadius: 16,
     backgroundColor: '#111827',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1254,27 +986,147 @@ const styles = StyleSheet.create({
     backgroundColor: '#ea580c',
   },
   primaryButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#ffffff',
     textAlign: 'center',
   },
+  secondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   secondaryButton: {
-    minHeight: 50,
-    borderRadius: 18,
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 16,
     backgroundColor: '#e0e7ff',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
   },
   secondaryButtonText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     color: '#3730a3',
   },
+  detailButton: {
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  detailButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  detailSafeArea: {
+    flex: 1,
+    backgroundColor: '#eef2f7',
+  },
+  detailContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    gap: 12,
+  },
+  detailHeader: {
+    borderRadius: 20,
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  detailEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.9,
+    color: '#f59e0b',
+  },
+  detailTitle: {
+    marginTop: 4,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  detailCloseButton: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  detailCloseText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  detailInfoCard: {
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 6,
+  },
+  detailLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    color: '#64748b',
+  },
+  detailValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  detailNotesText: {
+    fontSize: 15,
+    color: '#334155',
+    lineHeight: 21,
+  },
+  detailPhotoButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  detailPhoto: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#e2e8f0',
+  },
+  detailPhotoBadge: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.76)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  detailPhotoBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  detailMissingPhoto: {
+    fontSize: 15,
+    color: '#64748b',
+  },
   exceptionButton: {
-    minHeight: 50,
-    borderRadius: 18,
+    minHeight: 52,
+    borderRadius: 16,
     backgroundColor: '#fff7ed',
     borderWidth: 1,
     borderColor: '#fb923c',
@@ -1283,12 +1135,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   exceptionButtonText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     color: '#c2410c',
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  detailBottomActions: {
+    marginTop: 'auto',
+    gap: 10,
+    paddingBottom: 8,
+  },
+  detailSecondaryButton: {
+    minHeight: 50,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e2e8f0',
+    paddingHorizontal: 12,
+  },
+  detailSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
   },
   previewOverlay: {
     flex: 1,
@@ -1333,5 +1200,29 @@ const styles = StyleSheet.create({
     height: 420,
     borderRadius: 20,
     backgroundColor: '#020617',
+  },
+  fetchErrorCard: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#fdba74',
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 3,
+  },
+  fetchErrorLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    color: '#c2410c',
+  },
+  fetchErrorValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9a3412',
   },
 });

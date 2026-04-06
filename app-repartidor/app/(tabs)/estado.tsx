@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -60,6 +63,81 @@ export default function EstadoScreen() {
   const [relativeClock, setRelativeClock] = useState(() => Date.now());
   const [statuses, setStatuses] = useState<StatusItem[]>([]);
   const [checkError, setCheckError] = useState<string | null>(null);
+  const [pushRegistrationStatus, setPushRegistrationStatus] = useState<
+    'idle' | 'registering' | 'ready' | 'error'
+  >('idle');
+  const [pushRegistrationMessage, setPushRegistrationMessage] = useState('Sin registrar');
+
+  const registerPushToken = useCallback(async () => {
+    setPushRegistrationStatus('registering');
+    setPushRegistrationMessage('Registrando dispositivo...');
+
+    try {
+      if (!Device.isDevice) {
+        setPushRegistrationStatus('error');
+        setPushRegistrationMessage('Solo disponible en dispositivo fisico');
+        return;
+      }
+
+      const projectId =
+        Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+
+      if (!projectId) {
+        setPushRegistrationStatus('error');
+        setPushRegistrationMessage('Falta projectId de Expo');
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#ea580c',
+        });
+      }
+
+      const permission = await Notifications.getPermissionsAsync();
+      let finalStatus = permission.status;
+
+      if (finalStatus !== 'granted') {
+        const request = await Notifications.requestPermissionsAsync();
+        finalStatus = request.status;
+      }
+
+      if (finalStatus !== 'granted') {
+        setPushRegistrationStatus('error');
+        setPushRegistrationMessage('Permiso de notificaciones denegado');
+        return;
+      }
+
+      const expoPushToken = await Notifications.getExpoPushTokenAsync({ projectId });
+
+      const { error } = await supabase.from('repartidor_push_tokens').upsert(
+        {
+          expo_push_token: expoPushToken.data,
+          dispositivo_nombre: Device.deviceName ?? null,
+          plataforma: Platform.OS,
+          activo: true,
+          actualizado_en: new Date().toISOString(),
+        },
+        {
+          onConflict: 'expo_push_token',
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      setPushRegistrationStatus('ready');
+      setPushRegistrationMessage(`Push listo: ${expoPushToken.data.slice(0, 18)}...`);
+    } catch (error) {
+      console.error('Error registering push token', error);
+      setPushRegistrationStatus('error');
+      setPushRegistrationMessage('No se pudo registrar el token push');
+    }
+  }, []);
 
   const runDiagnostics = useCallback(async () => {
     setIsChecking(true);
@@ -96,23 +174,31 @@ export default function EstadoScreen() {
 
       const realtimeOnline = await new Promise<boolean>((resolve) => {
         const channel = supabase.channel(`app-repartidor-health-${Date.now()}`);
+        let settled = false;
+
+        const finish = (value: boolean) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timeoutId);
+          resolve(value);
+          void channel.unsubscribe();
+        };
+
         const timeoutId = setTimeout(() => {
-          void supabase.removeChannel(channel);
-          resolve(false);
+          finish(false);
         }, 3200);
 
         channel.subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            clearTimeout(timeoutId);
-            void supabase.removeChannel(channel);
-            resolve(true);
+            finish(true);
             return;
           }
 
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            clearTimeout(timeoutId);
-            void supabase.removeChannel(channel);
-            resolve(false);
+            finish(false);
           }
         });
       });
@@ -167,6 +253,10 @@ export default function EstadoScreen() {
   }, [runDiagnostics]);
 
   useEffect(() => {
+    void registerPushToken();
+  }, [registerPushToken]);
+
+  useEffect(() => {
     const intervalId = setInterval(() => {
       setRelativeClock(Date.now());
     }, 30000);
@@ -205,6 +295,35 @@ export default function EstadoScreen() {
           <Text style={styles.heroEyebrow}>Estado del sistema</Text>
           <Text style={styles.heroTitle}>{globalState.label}</Text>
           <Text style={styles.heroSubtitle}>Ultimo chequeo: {formatRelative(checkedAt, relativeClock)}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Push del dispositivo</Text>
+          <View
+            style={[
+              styles.pushCard,
+              pushRegistrationStatus === 'ready'
+                ? styles.pushCardReady
+                : pushRegistrationStatus === 'error'
+                  ? styles.pushCardError
+                  : styles.pushCardNeutral,
+            ]}>
+            <Text style={styles.pushLabel}>Estado push</Text>
+            <Text style={styles.pushValue}>{pushRegistrationMessage}</Text>
+
+            <TouchableOpacity
+              style={styles.pushRetryButton}
+              onPress={() => void registerPushToken()}
+              disabled={pushRegistrationStatus === 'registering'}>
+              <Text style={styles.pushRetryButtonText}>
+                {pushRegistrationStatus === 'registering'
+                  ? 'Registrando...'
+                  : pushRegistrationStatus === 'ready'
+                    ? 'Reintentar registro'
+                    : 'Registrar token'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -309,6 +428,50 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#0f172a',
+  },
+  pushCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  pushCardNeutral: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
+  pushCardReady: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#86efac',
+  },
+  pushCardError: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fca5a5',
+  },
+  pushLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#334155',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  pushValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  pushRetryButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  pushRetryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   loadingCard: {
     minHeight: 72,

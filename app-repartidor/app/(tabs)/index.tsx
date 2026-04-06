@@ -52,6 +52,11 @@ type DeliverPayload = {
   entregado_en: string;
 };
 
+type InlineFeedback = {
+  type: 'success' | 'info';
+  message: string;
+};
+
 const GOOGLE_MAPS_BASE_URL = 'https://www.google.com/maps/search/?api=1&query=';
 
 Notifications.setNotificationHandler({
@@ -133,6 +138,26 @@ function normalizeOrders(rawOrders: unknown[]): DeliveryOrder[] {
   });
 }
 
+function formatRelativeUpdate(timestamp: Date | null, now: number) {
+  if (!timestamp) {
+    return 'Sin actualizar';
+  }
+
+  const seconds = Math.max(0, Math.floor((now - timestamp.getTime()) / 1000));
+
+  if (seconds < 60) {
+    return `hace ${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `hace ${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  return `hace ${hours}h`;
+}
+
 export default function DeliveryHomeScreen() {
   const insets = useSafeAreaInsets();
   const [activeOrders, setActiveOrders] = useState<DeliveryOrder[]>([]);
@@ -149,6 +174,9 @@ export default function DeliveryHomeScreen() {
     'Sin registrar',
   );
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [relativeClock, setRelativeClock] = useState(() => Date.now());
+  const [inlineFeedback, setInlineFeedback] = useState<InlineFeedback | null>(null);
 
   const fetchPedidos = useCallback(async () => {
     const { data, error } = await supabase
@@ -165,6 +193,35 @@ export default function DeliveryHomeScreen() {
 
     setActiveOrders(normalizeOrders((data ?? []) as unknown[]));
     setFetchErrorMessage(null);
+    setLastUpdatedAt(new Date());
+  }, []);
+
+  const showInlineFeedback = useCallback((feedback: InlineFeedback) => {
+    setInlineFeedback(feedback);
+  }, []);
+
+  useEffect(() => {
+    if (!inlineFeedback) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setInlineFeedback(null);
+    }, 2500);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [inlineFeedback]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setRelativeClock(Date.now());
+    }, 30000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, []);
 
   const registerPushToken = useCallback(async () => {
@@ -387,6 +444,10 @@ export default function DeliveryHomeScreen() {
         }
 
         Alert.alert('Datos actualizados', 'Datos del cliente actualizados exitosamente.');
+        showInlineFeedback({
+          type: 'success',
+          message: 'Captura guardada. Ya podes continuar con la entrega.',
+        });
         await fetchPedidos();
       } catch (error) {
         console.error('Error capturing delivery client data:', error);
@@ -395,7 +456,7 @@ export default function DeliveryHomeScreen() {
         setCapturingClientId(null);
       }
     },
-    [fetchPedidos]
+    [fetchPedidos, showInlineFeedback]
   );
 
   const handleOpenRoute = useCallback(async (client: DeliveryClient | null) => {
@@ -450,6 +511,10 @@ export default function DeliveryHomeScreen() {
         }
 
         setActiveOrders((currentOrders) => currentOrders.filter((order) => order.id !== pedidoId));
+        showInlineFeedback({
+          type: 'success',
+          message: 'Entrega registrada correctamente.',
+        });
         Alert.alert('Pedido entregado', 'La entrega se registro correctamente.');
       } catch (error) {
         console.error('Error updating delivered order:', error);
@@ -458,7 +523,7 @@ export default function DeliveryHomeScreen() {
         setDeliveringOrderId(null);
       }
     },
-    []
+    [showInlineFeedback]
   );
 
   const handleEntregarConExcepcion = useCallback(
@@ -469,60 +534,51 @@ export default function DeliveryHomeScreen() {
         [
           { text: 'Cancelar', style: 'cancel' },
           {
-            text: 'Continuar',
+            text: 'Confirmar entrega',
             style: 'destructive',
             onPress: () => {
-              Alert.alert(
-                'Ultima confirmacion',
-                'Se marcara como entregado con excepcion por captura omitida del repartidor.',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  {
-                    text: 'Confirmar entrega',
-                    style: 'destructive',
-                    onPress: () => {
-                      setDeliveringOrderId(pedidoId);
+              setDeliveringOrderId(pedidoId);
 
-                      void (async () => {
-                        try {
-                          const payload: DeliverPayload = {
-                            estado: 'entregado',
-                            entrega_con_excepcion: true,
-                            motivo_entrega_excepcion: 'captura_omitida_repartidor',
-                            entregado_en: new Date().toISOString(),
-                          };
+              void (async () => {
+                try {
+                  const payload: DeliverPayload = {
+                    estado: 'entregado',
+                    entrega_con_excepcion: true,
+                    motivo_entrega_excepcion: 'captura_omitida_repartidor',
+                    entregado_en: new Date().toISOString(),
+                  };
 
-                          if (metodoPago === 'efectivo' && estadoPago === 'pendiente') {
-                            payload.estado_pago = 'pagado';
-                          }
+                  if (metodoPago === 'efectivo' && estadoPago === 'pendiente') {
+                    payload.estado_pago = 'pagado';
+                  }
 
-                          const { error } = await supabase.from('pedidos').update(payload).eq('id', pedidoId);
+                  const { error } = await supabase.from('pedidos').update(payload).eq('id', pedidoId);
 
-                          if (error) {
-                            throw error;
-                          }
+                  if (error) {
+                    throw error;
+                  }
 
-                          setActiveOrders((currentOrders) =>
-                            currentOrders.filter((order) => order.id !== pedidoId)
-                          );
-                          Alert.alert('Pedido entregado con excepcion', 'La entrega quedo registrada con trazabilidad.');
-                        } catch (error) {
-                          console.error('Error updating delivered order with exception:', error);
-                          Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
-                        } finally {
-                          setDeliveringOrderId(null);
-                        }
-                      })();
-                    },
-                  },
-                ]
-              );
+                  setActiveOrders((currentOrders) =>
+                    currentOrders.filter((order) => order.id !== pedidoId)
+                  );
+                  showInlineFeedback({
+                    type: 'info',
+                    message: 'Entrega con excepcion registrada para auditoria.',
+                  });
+                  Alert.alert('Pedido entregado con excepcion', 'La entrega quedo registrada con trazabilidad.');
+                } catch (error) {
+                  console.error('Error updating delivered order with exception:', error);
+                  Alert.alert('No se pudo completar la entrega', 'Intenta nuevamente.');
+                } finally {
+                  setDeliveringOrderId(null);
+                }
+              })();
             },
           },
         ]
       );
     },
-    []
+    [showInlineFeedback]
   );
 
   const renderOrder = useCallback(
@@ -531,6 +587,7 @@ export default function DeliveryHomeScreen() {
       const requiresCapture = !client?.latitud || !client?.url_foto_fachada;
       const isCapturing = capturingClientId === client?.id;
       const isDelivering = deliveringOrderId === item.id;
+      const canOpenRoute = Boolean(client?.latitud && client?.longitud);
 
       return (
         <View style={styles.card}>
@@ -601,10 +658,6 @@ export default function DeliveryHomeScreen() {
               </TouchableOpacity>
 
               <View style={styles.photoActions}>
-                <TouchableOpacity style={styles.routeButton} onPress={() => void handleOpenRoute(client)}>
-                  <Text style={styles.routeButtonText}>Ver ruta</Text>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   style={styles.previewButton}
                   onPress={() => setPreviewImageUrl(client.url_foto_fachada ?? null)}>
@@ -624,17 +677,24 @@ export default function DeliveryHomeScreen() {
                   {isCapturing ? 'Capturando...' : 'Tomar foto y guardar GPS'}
                 </Text>
               </TouchableOpacity>
-            ) : null}
+            ) : (
+              <TouchableOpacity
+                style={[styles.primaryButton, isDelivering && styles.buttonDisabled]}
+                onPress={() => void handleEntregar(item.id, item.metodo_pago, item.estado_pago)}
+                disabled={isDelivering}>
+                <Text style={styles.primaryButtonText}>{isDelivering ? 'Entregando...' : 'Entregar'}</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.secondaryButton, !canOpenRoute && styles.buttonDisabled]}
+              onPress={() => void handleOpenRoute(client)}
+              disabled={!canOpenRoute}>
+              <Text style={styles.secondaryButtonText}>Ruta</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.secondaryButton} onPress={() => void handleCall(client?.telefono ?? null)}>
               <Text style={styles.secondaryButtonText}>Llamar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.primaryButton, (requiresCapture || isDelivering) && styles.buttonDisabled]}
-              onPress={() => void handleEntregar(item.id, item.metodo_pago, item.estado_pago)}
-              disabled={requiresCapture || isDelivering}>
-              <Text style={styles.primaryButtonText}>{isDelivering ? 'Entregando...' : 'Entregar'}</Text>
             </TouchableOpacity>
 
             {requiresCapture ? (
@@ -679,7 +739,22 @@ export default function DeliveryHomeScreen() {
           <Text style={styles.headerSubtitle}>
             Gestiona entregas, cobro y captura de clientes nuevos desde una sola pantalla.
           </Text>
+          <Text style={styles.headerUpdatedText}>
+            Actualizado {formatRelativeUpdate(lastUpdatedAt, relativeClock)}
+          </Text>
         </View>
+
+        {inlineFeedback ? (
+          <View
+            style={[
+              styles.inlineFeedbackCard,
+              inlineFeedback.type === 'success'
+                ? styles.inlineFeedbackCardSuccess
+                : styles.inlineFeedbackCardInfo,
+            ]}>
+            <Text style={styles.inlineFeedbackText}>{inlineFeedback.message}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.headerStats}>
           <View style={styles.headerStatCard}>
@@ -736,8 +811,11 @@ export default function DeliveryHomeScreen() {
     [
       activeOrders.length,
       fetchErrorMessage,
+      inlineFeedback,
+      lastUpdatedAt,
       pushRegistrationMessage,
       pushRegistrationStatus,
+      relativeClock,
       realtimeConnected,
       registerPushToken,
     ]
@@ -934,6 +1012,30 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     lineHeight: 20,
   },
+  headerUpdatedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  inlineFeedbackCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  inlineFeedbackCardSuccess: {
+    backgroundColor: 'rgba(16,185,129,0.18)',
+    borderColor: 'rgba(16,185,129,0.28)',
+  },
+  inlineFeedbackCardInfo: {
+    backgroundColor: 'rgba(56,189,248,0.18)',
+    borderColor: 'rgba(56,189,248,0.28)',
+  },
+  inlineFeedbackText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
   listContent: {
     gap: 14,
   },
@@ -1122,19 +1224,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 10,
     justifyContent: 'center',
-  },
-  routeButton: {
-    minHeight: 44,
-    borderRadius: 16,
-    backgroundColor: '#dbeafe',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  routeButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1d4ed8',
   },
   previewButton: {
     minHeight: 44,

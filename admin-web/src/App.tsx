@@ -27,7 +27,12 @@ import {
 } from "./lib/printing"
 import { sendDispatchPushNotification } from "./lib/push"
 import { supabase } from "./lib/supabase"
-import type { Cliente, PedidoInsert, Producto } from "./types/database"
+import type {
+  Cliente,
+  PedidoInsert,
+  Producto,
+  RegistrarVentaPosResult,
+} from "./types/database"
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -47,18 +52,6 @@ type CartItem = {
   merma: string | null
   threeQuarterVariant: ThreeQuarterVariant | null
   singlePieceType: InventoryPieceKey | null
-}
-
-type RegistrarVentaPosResult = {
-  pedido_id: string
-  folio: string | null
-  fecha_creacion: string | null
-  total: number
-  tipo_pedido: string
-  metodo_pago: string | null
-  estado_pago: string
-  cliente_id: string | null
-  estado: string | null
 }
 
 type PrimaryTab = "POS" | "MONITOR"

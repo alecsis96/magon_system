@@ -19,3 +19,11 @@ app-repartidor/.git_backup_nested/
 app-repartidor/.vscode/
 app-repartidor/*firebase-adminsdk*.json
 *.tsbuildinfo
+
+# security-sensitive local files
+*supabase*.txt
+*password*.txt
+*contrase*.txt
+app-repartidor/google-services.json
+*firebase-adminsdk*.json
+*service-account*.json

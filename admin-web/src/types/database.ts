@@ -378,6 +378,55 @@ export interface RepartidorPushTokenUpdate extends Record<string, unknown> {
   creado_en?: ISODateTimeString | null;
   actualizado_en?: ISODateTimeString | null;
 }
+export interface RegistrarVentaPosResult extends Record<string, unknown> {
+  pedido_id: UUID;
+  folio: string | null;
+  fecha_creacion: ISODateTimeString | null;
+  total: number;
+  tipo_pedido: PedidoTipo;
+  metodo_pago: MetodoPago | null;
+  estado_pago: EstadoPago;
+  cliente_id: UUID | null;
+  estado: PedidoEstado | null;
+}
+export interface PrintableOrderItemRpc extends Record<string, unknown> {
+  detalle_id: UUID;
+  pedido_id: UUID;
+  producto_id: UUID | null;
+  producto_codigo: string;
+  producto_nombre: string;
+  descripcion: string | null;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+  variante_3_4: string | null;
+  merma_descripcion: string | null;
+  alas: number;
+  piernas: number;
+  muslos: number;
+  pechugas_grandes: number;
+  pechugas_chicas: number;
+  merma_alas: number;
+  merma_piernas: number;
+  merma_muslos: number;
+  merma_pechugas_grandes: number;
+  merma_pechugas_chicas: number;
+}
+export interface PrintableOrderRpc extends Record<string, unknown> {
+  pedido_id: UUID;
+  folio: string | null;
+  fecha_creacion: ISODateTimeString | null;
+  estado: PedidoEstado | null;
+  tipo_pedido: PedidoTipo;
+  metodo_pago: MetodoPago | null;
+  estado_pago: EstadoPago;
+  total: number;
+  cliente_id: UUID | null;
+  cliente_nombre: string | null;
+  cliente_telefono: string | null;
+  cliente_impresion: string | null;
+  items: PrintableOrderItemRpc[];
+}
 export interface Database {
   public: {
     Tables: {
@@ -455,11 +504,34 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      es_usuario_admin: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       eliminar_cliente_admin: {
         Args: {
           p_cliente_id: UUID;
         };
         Returns: UUID;
+      };
+      get_printable_order: {
+        Args: {
+          p_pedido_id: UUID;
+        };
+        Returns: Json;
+      };
+      guardar_producto_admin: {
+        Args: {
+          p_producto_id?: UUID | null;
+          p_nombre?: string | null;
+          p_descripcion?: string | null;
+          p_precio?: number | null;
+          p_categoria?: string | null;
+          p_subcategoria?: string | null;
+          p_piezas_inventario?: number | null;
+          p_requiere_variante_3_4?: boolean | null;
+        };
+        Returns: Producto;
       };
       registrar_venta: {
         Args: {
@@ -473,6 +545,25 @@ export interface Database {
           p_detalles?: Json;
         };
         Returns: InventarioDiario | null;
+      };
+      registrar_venta_pos: {
+        Args: {
+          p_total: number;
+          p_tipo_pedido: string;
+          p_metodo_pago: string;
+          p_estado_pago: string;
+          p_cliente_id?: UUID | null;
+          p_estado?: string | null;
+          p_fecha?: ISODateString;
+          p_detalles?: Json;
+        };
+        Returns: Json;
+      };
+      reabrir_inventario_dia: {
+        Args: {
+          p_inventory_id: UUID;
+        };
+        Returns: InventarioDiario;
       };
     };
     Enums: Record<string, never>;

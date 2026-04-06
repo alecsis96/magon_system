@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import {
   PIECE_LABELS,
@@ -311,7 +311,7 @@ export function InventoryManager() {
   const [isClosingDay, setIsClosingDay] = useState(false)
   const [isReopeningDay, setIsReopeningDay] = useState(false)
 
-  async function loadAdminAccess() {
+  const loadAdminAccess = useCallback(async () => {
     try {
       const access = await getAdminAccess()
       setAdminAccess(access)
@@ -323,9 +323,9 @@ export function InventoryManager() {
         email: null,
       })
     }
-  }
+  }, [])
 
-  async function loadTodayMovements(inventoryId: string) {
+  const loadTodayMovements = useCallback(async (inventoryId: string) => {
     const { data, error } = await supabase
       .from("inventario_movimientos")
       .select("*")
@@ -338,7 +338,7 @@ export function InventoryManager() {
     }
 
     setTodayMovements((data ?? []) as InventarioMovimiento[])
-  }
+  }, [])
 
   async function createInventoryMovements(rows: InventarioMovimientoInsert[]) {
     if (rows.length === 0) {
@@ -365,7 +365,7 @@ export function InventoryManager() {
     return adminAccess.email ?? "operacion"
   }
 
-  async function loadTodayInventory() {
+  const loadTodayInventory = useCallback(async () => {
     const today = getTodayLocalISODate()
 
     try {
@@ -423,12 +423,12 @@ export function InventoryManager() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [loadTodayMovements])
 
   useEffect(() => {
     void loadTodayInventory()
     void loadAdminAccess()
-  }, [])
+  }, [loadAdminAccess, loadTodayInventory])
 
   useEffect(() => {
     if (!adminAccess.isAdmin && activeOperationTab === "ajustes") {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { supabase } from "../lib/supabase"
@@ -182,7 +182,7 @@ export function AccountingDashboard() {
   const todayKey = getTodayLocalISODate()
   const { monthStartDate, nextMonthStartDate, monthLabel } = getMonthRange()
 
-  async function loadAdminState() {
+  const loadAdminState = useCallback(async () => {
     try {
       const access = await getAdminAccess()
       setAdminAccess(access)
@@ -192,9 +192,9 @@ export function AccountingDashboard() {
       setAdminAccess(DEFAULT_ACCESS)
       return DEFAULT_ACCESS
     }
-  }
+  }, [])
 
-  async function loadAccountingData() {
+  const loadAccountingData = useCallback(async () => {
     try {
       setIsLoading(true)
 
@@ -239,7 +239,7 @@ export function AccountingDashboard() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [loadAdminState, monthStartDate, nextMonthStartDate])
 
   useEffect(() => {
     void loadAccountingData()
@@ -253,7 +253,7 @@ export function AccountingDashboard() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [loadAccountingData])
 
   async function handleSaveExpense() {
     if (!adminAccess.isAdmin) {

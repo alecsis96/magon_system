@@ -3,7 +3,7 @@ import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
-import type { Cliente, Pedido, PedidoDetalle } from "../types/database"
+import type { Cliente, EliminarPedidoAdminResult, Pedido } from "../types/database"
 
 type ActiveOrder = Pedido & {
   clientes: Pick<Cliente, "nombre" | "notas_entrega"> | null
@@ -13,13 +13,6 @@ const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
   maximumFractionDigits: 0,
-})
-
-const inventoryDateFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Mexico_City",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
 })
 
 const DEFAULT_ACCESS: AdminAccess = {
@@ -50,22 +43,6 @@ function formatPaymentStatus(estadoPago: Pedido["estado_pago"]) {
 
 function getShortOrderId(orderId: string) {
   return `#${orderId.slice(0, 8).toUpperCase()}`
-}
-
-function getOrderInventoryDate(fechaCreacion: string | null) {
-  if (!fechaCreacion) {
-    return inventoryDateFormatter.format(new Date())
-  }
-
-  const parsedDate = fechaCreacion.endsWith("Z")
-    ? new Date(fechaCreacion)
-    : new Date(`${fechaCreacion}Z`)
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return inventoryDateFormatter.format(new Date())
-  }
-
-  return inventoryDateFormatter.format(parsedDate)
 }
 
 function getStatusAction(order: ActiveOrder) {
@@ -234,174 +211,18 @@ export function OrdersMonitor() {
     try {
       setProcessingOrderId(order.id)
 
-      const { data: detallesData, error: detallesError } = await supabase
-        .from("pedido_detalles")
-        .select(
-          "id, pedido_id, alas, piernas, muslos, pechugas_grandes, pechugas_chicas, merma_alas, merma_piernas, merma_muslos, merma_pechugas_grandes, merma_pechugas_chicas",
-        )
-        .eq("pedido_id", order.id)
+      const { data, error } = await supabase.rpc("eliminar_pedido_admin", {
+        p_pedido_id: order.id,
+      })
 
-      if (detallesError) {
-        throw detallesError
+      if (error) {
+        throw error
       }
 
-      const detalles = (detallesData ?? []) as Pick<
-        PedidoDetalle,
-        | "id"
-        | "pedido_id"
-        | "alas"
-        | "piernas"
-        | "muslos"
-        | "pechugas_grandes"
-        | "pechugas_chicas"
-        | "merma_alas"
-        | "merma_piernas"
-        | "merma_muslos"
-        | "merma_pechugas_grandes"
-        | "merma_pechugas_chicas"
-      >[]
+      const result = data as EliminarPedidoAdminResult | null
 
-      if (detalles.length > 0) {
-        const soldBreakdown = detalles.reduce(
-          (acc, detail) => ({
-            alas: acc.alas + (detail.alas ?? 0),
-            piernas: acc.piernas + (detail.piernas ?? 0),
-            muslos: acc.muslos + (detail.muslos ?? 0),
-            pechugas_grandes:
-              acc.pechugas_grandes + (detail.pechugas_grandes ?? 0),
-            pechugas_chicas:
-              acc.pechugas_chicas + (detail.pechugas_chicas ?? 0),
-            merma_alas: acc.merma_alas + (detail.merma_alas ?? 0),
-            merma_piernas: acc.merma_piernas + (detail.merma_piernas ?? 0),
-            merma_muslos: acc.merma_muslos + (detail.merma_muslos ?? 0),
-            merma_pechugas_grandes:
-              acc.merma_pechugas_grandes + (detail.merma_pechugas_grandes ?? 0),
-            merma_pechugas_chicas:
-              acc.merma_pechugas_chicas + (detail.merma_pechugas_chicas ?? 0),
-          }),
-          {
-            alas: 0,
-            piernas: 0,
-            muslos: 0,
-            pechugas_grandes: 0,
-            pechugas_chicas: 0,
-            merma_alas: 0,
-            merma_piernas: 0,
-            merma_muslos: 0,
-            merma_pechugas_grandes: 0,
-            merma_pechugas_chicas: 0,
-          },
-        )
-
-        const piezasVendidas =
-          soldBreakdown.alas +
-          soldBreakdown.piernas +
-          soldBreakdown.muslos +
-          soldBreakdown.pechugas_grandes +
-          soldBreakdown.pechugas_chicas
-        const mermasQuemadas =
-          soldBreakdown.merma_alas +
-          soldBreakdown.merma_piernas +
-          soldBreakdown.merma_muslos +
-          soldBreakdown.merma_pechugas_grandes +
-          soldBreakdown.merma_pechugas_chicas
-        const inventoryDate = getOrderInventoryDate(order.fecha_creacion)
-
-        const { data: inventoryData, error: inventoryError } = await supabase
-          .from("inventario_diario")
-          .select(
-            "id, pollos_vendidos, ventas_alas, ventas_piernas, ventas_muslos, ventas_pechugas_g, ventas_pechugas_c, mermas_quemados, mermas_alas, mermas_piernas, mermas_muslos, mermas_pechugas_g, mermas_pechugas_c",
-          )
-          .eq("fecha", inventoryDate)
-          .maybeSingle()
-
-        if (inventoryError) {
-          throw inventoryError
-        }
-
-        if (!inventoryData) {
-          throw new Error("No se encontro el inventario del dia para revertir el pedido")
-        }
-
-        const { error: inventoryUpdateError } = await supabase
-          .from("inventario_diario")
-          .update({
-            pollos_vendidos: Math.max(
-              0,
-              (inventoryData.pollos_vendidos ?? 0) - piezasVendidas,
-            ),
-            ventas_alas: Math.max(
-              0,
-              (inventoryData.ventas_alas ?? 0) - soldBreakdown.alas,
-            ),
-            ventas_piernas: Math.max(
-              0,
-              (inventoryData.ventas_piernas ?? 0) - soldBreakdown.piernas,
-            ),
-            ventas_muslos: Math.max(
-              0,
-              (inventoryData.ventas_muslos ?? 0) - soldBreakdown.muslos,
-            ),
-            ventas_pechugas_g: Math.max(
-              0,
-              (inventoryData.ventas_pechugas_g ?? 0) -
-                soldBreakdown.pechugas_grandes,
-            ),
-            ventas_pechugas_c: Math.max(
-              0,
-              (inventoryData.ventas_pechugas_c ?? 0) -
-                soldBreakdown.pechugas_chicas,
-            ),
-            mermas_quemados: Math.max(
-              0,
-              (inventoryData.mermas_quemados ?? 0) - mermasQuemadas,
-            ),
-            mermas_alas: Math.max(
-              0,
-              (inventoryData.mermas_alas ?? 0) - soldBreakdown.merma_alas,
-            ),
-            mermas_piernas: Math.max(
-              0,
-              (inventoryData.mermas_piernas ?? 0) - soldBreakdown.merma_piernas,
-            ),
-            mermas_muslos: Math.max(
-              0,
-              (inventoryData.mermas_muslos ?? 0) - soldBreakdown.merma_muslos,
-            ),
-            mermas_pechugas_g: Math.max(
-              0,
-              (inventoryData.mermas_pechugas_g ?? 0) -
-                soldBreakdown.merma_pechugas_grandes,
-            ),
-            mermas_pechugas_c: Math.max(
-              0,
-              (inventoryData.mermas_pechugas_c ?? 0) -
-                soldBreakdown.merma_pechugas_chicas,
-            ),
-          })
-          .eq("id", inventoryData.id)
-
-        if (inventoryUpdateError) {
-          throw inventoryUpdateError
-        }
-      }
-
-      const { error: deleteDetailsError } = await supabase
-        .from("pedido_detalles")
-        .delete()
-        .eq("pedido_id", order.id)
-
-      if (deleteDetailsError) {
-        throw deleteDetailsError
-      }
-
-      const { error: deleteOrderError } = await supabase
-        .from("pedidos")
-        .delete()
-        .eq("id", order.id)
-
-      if (deleteOrderError) {
-        throw deleteOrderError
+      if (!result?.ok) {
+        throw new Error("No se pudo eliminar el pedido")
       }
 
       await loadActiveOrders()

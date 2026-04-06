@@ -427,6 +427,19 @@ export interface PrintableOrderRpc extends Record<string, unknown> {
   cliente_impresion: string | null;
   items: PrintableOrderItemRpc[];
 }
+export interface EliminarPedidoAdminResult extends Record<string, unknown> {
+  pedido_id: UUID;
+  inventory_id: UUID;
+  ok: boolean;
+  piezas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+}
 export interface Database {
   public: {
     Tables: {
@@ -513,6 +526,12 @@ export interface Database {
           p_cliente_id: UUID;
         };
         Returns: UUID;
+      };
+      eliminar_pedido_admin: {
+        Args: {
+          p_pedido_id: UUID;
+        };
+        Returns: Json;
       };
       get_printable_order: {
         Args: {

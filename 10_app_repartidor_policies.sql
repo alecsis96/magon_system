@@ -44,7 +44,10 @@ on repartidor_push_tokens
 for insert
 to public
 with check (
-    expo_push_token like 'ExponentPushToken[%]'
+    (
+        expo_push_token like 'ExponentPushToken[%]'
+        or expo_push_token like 'ExpoPushToken[%]'
+    )
     and length(expo_push_token) <= 255
 );
 
@@ -55,6 +58,9 @@ for update
 to public
 using (true)
 with check (
-    expo_push_token like 'ExponentPushToken[%]'
+    (
+        expo_push_token like 'ExponentPushToken[%]'
+        or expo_push_token like 'ExpoPushToken[%]'
+    )
     and length(expo_push_token) <= 255
 );

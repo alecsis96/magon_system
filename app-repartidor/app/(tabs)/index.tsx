@@ -16,12 +16,10 @@ import {
   Vibration,
   View,
 } from 'react-native';
-import { decode } from 'base64-arraybuffer';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { captureClientData, getRepartoErrorMessage } from '@/src/features/reparto/capture-client-data';
 import {
   recordCriticalAction,
   recordOrdersRefreshError,
@@ -113,29 +111,7 @@ function formatCurrency(value: number | null) {
 }
 
 function getErrorMessage(error: unknown) {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = error.message;
-
-    if (typeof message === 'string' && message.trim()) {
-      if (
-        message.includes('ExponentImagePicker.launchCameraAsync') ||
-        message.includes('NoSuchMethodError')
-      ) {
-        return 'La camara del APK quedo desalineada. Instala el build nuevo generado despues de actualizar dependencias.';
-      }
-
-      if (
-        message.includes('Default FirebaseApp is not initialized') ||
-        message.includes('google-services')
-      ) {
-        return 'Push Android sin configurar. Falta enlazar Firebase/FCM y reconstruir la app.';
-      }
-
-      return message;
-    }
-  }
-
-  return 'Verifica permisos, conexion e intenta nuevamente.';
+  return getRepartoErrorMessage(error);
 }
 
 function normalizeOrders(rawOrders: unknown[]): DeliveryOrder[] {
@@ -600,72 +576,10 @@ export default function DeliveryHomeScreen() {
       playLightHaptic();
 
       try {
-        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        const captureResult = await captureClientData(clienteId);
 
-        if (cameraPermission.status !== 'granted') {
-          Alert.alert('Permiso requerido', 'Necesitamos acceso a la camara para capturar la fachada.');
+        if (captureResult.status === 'cancelled') {
           return;
-        }
-
-        const locationPermission = await Location.requestForegroundPermissionsAsync();
-
-        if (locationPermission.status !== 'granted') {
-          Alert.alert('Permiso requerido', 'Necesitamos tu ubicacion para guardar la entrega del cliente.');
-          return;
-        }
-
-        const photoResult = await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images'],
-          quality: 0.5,
-          base64: true,
-          allowsEditing: false,
-        });
-
-        if (photoResult.canceled || !photoResult.assets[0]) {
-          return;
-        }
-
-        const photoAsset = photoResult.assets[0];
-
-        if (!photoAsset.base64) {
-          throw new Error('No se pudo obtener la foto en base64');
-        }
-
-        Alert.alert('Guardando...', 'Subiendo foto y coordenadas del cliente.');
-
-        const currentPosition = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-
-        const fileName = `${clienteId}-${Date.now()}.jpg`;
-        const filePath = `clientes/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('fachadas')
-          .upload(filePath, decode(photoAsset.base64), {
-            contentType: 'image/jpeg',
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw uploadError;
-        }
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from('fachadas').getPublicUrl(filePath);
-
-        const { error: updateError } = await supabase
-          .from('clientes')
-          .update({
-            latitud: currentPosition.coords.latitude,
-            longitud: currentPosition.coords.longitude,
-            url_foto_fachada: publicUrl,
-          })
-          .eq('id', clienteId);
-
-        if (updateError) {
-          throw updateError;
         }
 
         showInlineFeedback({

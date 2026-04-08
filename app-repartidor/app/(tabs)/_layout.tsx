@@ -30,6 +30,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <MaterialIcons size={24} name="monitor-heart" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="recapturas"
+        options={{
+          title: 'Recapturas',
+          tabBarIcon: ({ color }) => <MaterialIcons size={24} name="photo-camera" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

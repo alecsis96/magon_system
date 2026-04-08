@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Toaster, toast } from "react-hot-toast"
 import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
@@ -230,6 +230,21 @@ function getErrorMessage(error: unknown) {
   return "No se pudo completar la operacion"
 }
 
+function isMissingTodayInventoryError(message: string) {
+  const normalizedMessage = message.toLowerCase()
+
+  if (normalizedMessage.includes("inventario de hoy no iniciado")) {
+    return true
+  }
+
+  return (
+    normalizedMessage.includes("inventario") &&
+    (normalizedMessage.includes("no iniciado") ||
+      normalizedMessage.includes("inicia") ||
+      normalizedMessage.includes("iniciado"))
+  )
+}
+
 function VentaIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -309,6 +324,34 @@ function App() {
   const [estadoPago, setEstadoPago] = useState<"pagado" | "pendiente">(
     "pagado",
   )
+  const [todayIsoDate, setTodayIsoDate] = useState(getTodayLocalISODate())
+  const [isInventoryReadyForToday, setIsInventoryReadyForToday] =
+    useState<boolean>(true)
+  const [isCheckingInventoryStatus, setIsCheckingInventoryStatus] =
+    useState<boolean>(true)
+
+  const checkTodayInventoryStatus = useCallback(async (targetDate: string) => {
+    try {
+      setIsCheckingInventoryStatus(true)
+
+      const { data, error } = await supabase
+        .from("inventario_diario")
+        .select("id")
+        .eq("fecha", targetDate)
+        .maybeSingle()
+
+      if (error) {
+        throw error
+      }
+
+      setIsInventoryReadyForToday(Boolean(data?.id))
+    } catch (error) {
+      console.error("Error al validar inventario del dia:", error)
+      setIsInventoryReadyForToday(true)
+    } finally {
+      setIsCheckingInventoryStatus(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (tipoPedido === "mostrador") {
@@ -318,6 +361,39 @@ function App() {
 
     setEstadoPago("pendiente")
   }, [tipoPedido])
+
+  useEffect(() => {
+    void checkTodayInventoryStatus(todayIsoDate)
+  }, [checkTodayInventoryStatus, todayIsoDate])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const nextDate = getTodayLocalISODate()
+
+      setTodayIsoDate((currentDate) =>
+        currentDate === nextDate ? currentDate : nextDate,
+      )
+    }, 60000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleFocus = () => {
+      const nextDate = getTodayLocalISODate()
+
+      setTodayIsoDate(nextDate)
+      void checkTodayInventoryStatus(nextDate)
+    }
+
+    window.addEventListener("focus", handleFocus)
+
+    return () => {
+      window.removeEventListener("focus", handleFocus)
+    }
+  }, [checkTodayInventoryStatus])
 
   function handleAddToCart(producto: Producto) {
     setCart((currentCart) => [
@@ -609,7 +685,38 @@ function App() {
       showSaleSuccessToast(total, piezasInventario, dispatchStatus)
     } catch (error) {
       console.error("Error al registrar la venta:", error)
-      toast.error(getErrorMessage(error))
+      const errorMessage = getErrorMessage(error)
+
+      if (isMissingTodayInventoryError(errorMessage)) {
+        setIsInventoryReadyForToday(false)
+        toast.custom(
+          () => (
+            <div className="w-[min(92vw,24rem)] rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+              <p className="text-sm font-semibold text-amber-900">
+                Antes de cobrar, inicia el inventario de hoy.
+              </p>
+              <p className="mt-1 text-xs text-amber-800">
+                Te llevamos a INVENTARIO para registrarlo y volver a vender.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCheckoutModalOpen(false)
+                  setIsDispatchPromptOpen(false)
+                  setActiveTab("INVENTARIO")
+                  setIsMoreMenuOpen(false)
+                }}
+                className="mt-3 rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-white transition hover:bg-amber-700"
+              >
+                Ir a inventario
+              </button>
+            </div>
+          ),
+          { duration: 4000, position: "top-right" },
+        )
+      } else {
+        toast.error(errorMessage)
+      }
     } finally {
       setIsCheckingOut(false)
     }
@@ -662,6 +769,31 @@ function App() {
       />
 
       <div className="mx-auto max-w-7xl">
+        {activeTab === "POS" && !isCheckingInventoryStatus && !isInventoryReadyForToday ? (
+          <section className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 shadow-sm sm:p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                  Inventario pendiente
+                </p>
+                <p className="mt-1 text-sm font-semibold text-amber-900">
+                  Inicia el inventario de hoy para habilitar ventas en caja.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("INVENTARIO")
+                  setIsMoreMenuOpen(false)
+                }}
+                className="rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-white transition hover:bg-amber-700 focus:outline-none focus:ring-4 focus:ring-amber-200"
+              >
+                Ir a inventario
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {activeTab === "POS" ? (
           <>
             <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
@@ -696,7 +828,7 @@ function App() {
               </div>
             ) : null}
 
-            {isCheckoutModalOpen ? (
+            {isCheckoutModalOpen && !isDispatchPromptOpen ? (
               <div className="fixed inset-0 z-[60] overflow-y-auto bg-white p-4">
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col">
                   <div className="mb-4 flex items-center justify-between gap-3">
@@ -1079,7 +1211,14 @@ function App() {
             <AdminClientes />
           </div>
         ) : activeTab === "INVENTARIO" ? (
-          <InventoryManager />
+          <InventoryManager
+            onInventoryStarted={() => {
+              const currentDate = getTodayLocalISODate()
+
+              setTodayIsoDate(currentDate)
+              void checkTodayInventoryStatus(currentDate)
+            }}
+          />
         ) : activeTab === "CONTABILIDAD" ? (
           <AccountingDashboard />
         ) : (
@@ -1180,7 +1319,7 @@ function App() {
       </nav>
 
       {isDispatchPromptOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/30 p-4 backdrop-blur-[2px] sm:items-center">
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-900/30 p-4 backdrop-blur-[2px] sm:items-center">
           <div className="w-full max-w-sm rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.22)] ring-1 ring-slate-200">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">
               Pedido a domicilio

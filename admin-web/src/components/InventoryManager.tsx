@@ -277,7 +277,11 @@ function OperationTabButton({
   )
 }
 
-export function InventoryManager() {
+type InventoryManagerProps = {
+  onInventoryStarted?: () => void
+}
+
+export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) {
   const [adminAccess, setAdminAccess] = useState<AdminAccess>({
     isAuthenticated: false,
     isAdmin: false,
@@ -495,6 +499,7 @@ export function InventoryManager() {
       setSelectedPieceAdjustment("alas")
       setPieceStockValue(String(getPieceStock(inventory, "alas")))
       setPieceAdjustmentReason("")
+      onInventoryStarted?.()
       toast.success("Inventario del dia iniciado correctamente")
     } catch (error) {
       console.error("Error al iniciar el dia:", error)
@@ -911,11 +916,11 @@ export function InventoryManager() {
             Inventario diario
           </p>
           <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-            Registro opcional del dia
+            Inicia inventario para habilitar ventas
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">
-            Las ventas ya no dependen de iniciar inventario. Si hoy llega producto nuevo, registralo aqui.
-            Si no llega producto nuevo, puedes dejar este paso pendiente y vender normalmente.
+            El sistema requiere inventario diario antes de cobrar en caja. Registra aqui las piezas de hoy para
+            habilitar las ventas y mantener el control correcto del turno.
           </p>
           <p className="mt-5 text-2xl font-black text-amber-600 sm:text-3xl">
             Stock sobrante de ayer: {formatMetric(stockAnterior)} pzs
@@ -925,7 +930,7 @@ export function InventoryManager() {
               htmlFor="nuevos-ingresos"
               className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500"
             >
-              Cuantas piezas nuevas llegaron hoy? (Opcional)
+              Cuantas piezas nuevas llegaron hoy?
             </label>
             <input
               id="nuevos-ingresos"

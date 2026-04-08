@@ -10,6 +10,17 @@ type CustomerFormData = {
   referencias: string
 }
 
+type ReactNativeWebViewBridge = {
+  postMessage: (message: string) => void
+}
+
+type ExternalMapWindow = Window & {
+  ReactNativeWebView?: ReactNativeWebViewBridge
+}
+
+const ALLOWED_MAP_PROTOCOL = "https:"
+const ALLOWED_MAP_HOSTS = new Set(["www.google.com", "google.com", "maps.google.com"])
+
 const EMPTY_FORM: CustomerFormData = {
   nombre: "",
   telefono: "",
@@ -103,6 +114,56 @@ function formatCoordinate(value: number | null) {
 
 function hasCoordinates(cliente: Cliente) {
   return cliente.latitud !== null && cliente.longitud !== null
+}
+
+function buildGoogleMapsUrl(latitud: number, longitud: number) {
+  const query = encodeURIComponent(`${latitud},${longitud}`)
+  return `https://www.google.com/maps/search/?api=1&query=${query}`
+}
+
+function isAllowedMapUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl)
+    return url.protocol === ALLOWED_MAP_PROTOCOL && ALLOWED_MAP_HOSTS.has(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+function openExternalMapUrl(rawUrl: string) {
+  if (!isAllowedMapUrl(rawUrl)) {
+    return false
+  }
+
+  const currentWindow = window as ExternalMapWindow
+
+  if (currentWindow.ReactNativeWebView) {
+    try {
+      currentWindow.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          type: "open_external_url",
+          url: rawUrl,
+          source: "customer_directory_audit",
+        }),
+      )
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  try {
+    const popup = window.open(rawUrl, "_blank", "noopener,noreferrer")
+
+    if (popup) {
+      popup.opener = null
+      return true
+    }
+
+    return false
+  } catch {
+    return false
+  }
 }
 
 function AlertTriangleIcon({ className }: { className?: string }) {
@@ -306,8 +367,14 @@ export function CustomerDirectoryAudit() {
       return
     }
 
-    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${selectedClient.latitud},${selectedClient.longitud}`
-    window.open(googleMapsUrl, "_blank", "noopener,noreferrer")
+    const googleMapsUrl = buildGoogleMapsUrl(
+      selectedClient.latitud,
+      selectedClient.longitud,
+    )
+
+    if (!openExternalMapUrl(googleMapsUrl)) {
+      toast.error("No se pudo abrir Google Maps desde este contenedor.")
+    }
   }
 
   async function handleMarkPhotoForRepeat() {

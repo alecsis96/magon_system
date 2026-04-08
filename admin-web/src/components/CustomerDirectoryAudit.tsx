@@ -319,21 +319,37 @@ export function CustomerDirectoryAudit() {
       setIsFlaggingPhoto(true)
       setModalError(null)
 
-      const { data, error } = await supabase
+      const { error: updateError } = await supabase
         .from("clientes")
-        .update({ foto_valida: false })
+        .update({
+          foto_valida: false,
+          url_foto_fachada: null,
+          latitud: null,
+          longitud: null,
+        })
         .eq("id", selectedClient.id)
-        .select()
-        .single()
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
-      const updatedClient = data as Cliente
+      const { data: updatedClient, error: fetchError } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("id", selectedClient.id)
+        .maybeSingle()
+
+      if (fetchError) {
+        throw fetchError
+      }
+
+      if (!updatedClient) {
+        throw new Error("No se pudo recuperar el cliente actualizado.")
+      }
+
       setSelectedClient(updatedClient)
       setClients((currentClients) => replaceClient(currentClients, updatedClient))
-      toast.success("La foto quedo marcada para repetir.")
+      toast.success("Se solicito recaptura de foto y coordenadas.")
     } catch (error) {
       console.error("Error al solicitar nueva foto:", error)
       const message = getErrorMessage(error)
@@ -514,7 +530,7 @@ export function CustomerDirectoryAudit() {
       </div>
 
       {selectedClient ? (
-        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-white">
           <div
             className="min-h-full bg-white pb-40"
             style={{
@@ -746,7 +762,7 @@ export function CustomerDirectoryAudit() {
           </div>
 
           <div
-            className="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 p-4 text-white shadow-[0_-12px_30px_rgba(15,23,42,0.18)]"
+            className="fixed bottom-0 left-0 right-0 z-[80] bg-gray-900 p-4 text-white shadow-[0_-12px_30px_rgba(15,23,42,0.18)]"
             style={{
               bottom: `${keyboardInset}px`,
               paddingBottom: "calc(1rem + env(safe-area-inset-bottom))",

@@ -25,6 +25,7 @@ export type PedidoEstado =
   | (string & {});
 export type PedidoTipo = "mostrador" | "domicilio" | (string & {});
 export type MetodoPago = "efectivo" | "transferencia" | (string & {});
+export type MedioSalida = "efectivo" | "transferencia" | (string & {});
 export type EstadoPago = "pendiente" | "pagado";
 export interface Producto extends Record<string, unknown> {
   id: UUID;
@@ -330,6 +331,11 @@ export interface Egreso extends Record<string, unknown> {
   categoria: string;
   concepto: string;
   monto: number;
+  medio_salida: MedioSalida;
+  cancelado: boolean;
+  motivo_cancelacion: string | null;
+  cancelado_en: ISODateTimeString | null;
+  cancelado_por: UUID | null;
   creado_por: UUID | null;
   creado_en: ISODateTimeString;
 }
@@ -339,6 +345,11 @@ export interface EgresoInsert extends Record<string, unknown> {
   categoria: string;
   concepto: string;
   monto: number;
+  medio_salida?: MedioSalida;
+  cancelado?: boolean;
+  motivo_cancelacion?: string | null;
+  cancelado_en?: ISODateTimeString | null;
+  cancelado_por?: UUID | null;
   creado_por?: UUID | null;
   creado_en?: ISODateTimeString;
 }
@@ -348,8 +359,85 @@ export interface EgresoUpdate extends Record<string, unknown> {
   categoria?: string;
   concepto?: string;
   monto?: number;
+  medio_salida?: MedioSalida;
+  cancelado?: boolean;
+  motivo_cancelacion?: string | null;
+  cancelado_en?: ISODateTimeString | null;
+  cancelado_por?: UUID | null;
   creado_por?: UUID | null;
   creado_en?: ISODateTimeString;
+}
+export interface EgresoPlantilla extends Record<string, unknown> {
+  id: UUID;
+  nombre: string;
+  categoria: string;
+  concepto_base: string;
+  monto_sugerido: number | null;
+  medio_salida: MedioSalida;
+  activo: boolean;
+  orden: number;
+  creado_en: ISODateTimeString;
+  creado_por: UUID | null;
+}
+export interface EgresoPlantillaInsert extends Record<string, unknown> {
+  id?: UUID;
+  nombre: string;
+  categoria: string;
+  concepto_base: string;
+  monto_sugerido?: number | null;
+  medio_salida?: MedioSalida;
+  activo?: boolean;
+  orden?: number;
+  creado_en?: ISODateTimeString;
+  creado_por?: UUID | null;
+}
+export interface EgresoPlantillaUpdate extends Record<string, unknown> {
+  id?: UUID;
+  nombre?: string;
+  categoria?: string;
+  concepto_base?: string;
+  monto_sugerido?: number | null;
+  medio_salida?: MedioSalida;
+  activo?: boolean;
+  orden?: number;
+  creado_en?: ISODateTimeString;
+  creado_por?: UUID | null;
+}
+export interface CierreCaja extends Record<string, unknown> {
+  id: UUID;
+  fecha: ISODateString;
+  fondo_inicial: number;
+  conteo_denominaciones: Json;
+  contado_total: number;
+  esperado_total: number;
+  diferencia: number;
+  notas: string | null;
+  cerrado_en: ISODateTimeString;
+  cerrado_por: UUID | null;
+}
+export interface CierreCajaInsert extends Record<string, unknown> {
+  id?: UUID;
+  fecha: ISODateString;
+  fondo_inicial?: number;
+  conteo_denominaciones?: Json;
+  contado_total?: number;
+  esperado_total?: number;
+  diferencia?: number;
+  notas?: string | null;
+  cerrado_en?: ISODateTimeString;
+  cerrado_por?: UUID | null;
+}
+export interface CierreCajaUpdate extends Record<string, unknown> {
+  id?: UUID;
+  fecha?: ISODateString;
+  fondo_inicial?: number;
+  conteo_denominaciones?: Json;
+  contado_total?: number;
+  esperado_total?: number;
+  diferencia?: number;
+  notas?: string | null;
+  cerrado_en?: ISODateTimeString;
+  cerrado_por?: UUID | null;
 }
 export interface RepartidorPushToken extends Record<string, unknown> {
   id: UUID;
@@ -443,10 +531,22 @@ export interface EliminarPedidoAdminResult extends Record<string, unknown> {
 export interface Database {
   public: {
     Tables: {
+      cierres_caja: {
+        Row: CierreCaja;
+        Insert: CierreCajaInsert;
+        Update: CierreCajaUpdate;
+        Relationships: [];
+      };
       egresos: {
         Row: Egreso;
         Insert: EgresoInsert;
         Update: EgresoUpdate;
+        Relationships: [];
+      };
+      egreso_plantillas: {
+        Row: EgresoPlantilla;
+        Insert: EgresoPlantillaInsert;
+        Update: EgresoPlantillaUpdate;
         Relationships: [];
       };
       productos: {

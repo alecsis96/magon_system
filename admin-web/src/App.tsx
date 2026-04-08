@@ -697,7 +697,7 @@ function App() {
             ) : null}
 
             {isCheckoutModalOpen ? (
-              <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-4">
+              <div className="fixed inset-0 z-[60] overflow-y-auto bg-white p-4">
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>

@@ -224,9 +224,16 @@ export function OrdersMonitor() {
     try {
       setProcessingOrderId(order.id)
 
+      const updatePayload: { estado: Pedido["estado"]; estado_pago?: Pedido["estado_pago"] } = {
+        estado: statusAction.nextState,
+        ...(statusAction.nextState === "entregado"
+          ? { estado_pago: "pagado" }
+          : {}),
+      }
+
       const { error } = await supabase
         .from("pedidos")
-        .update({ estado: statusAction.nextState })
+        .update(updatePayload)
         .eq("id", order.id)
 
       if (error) {

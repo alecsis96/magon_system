@@ -653,7 +653,7 @@ export default function DeliveryHomeScreen() {
   }, []);
 
   const handleEntregar = useCallback(
-    async (pedidoId: string, metodoPago: string | null, estadoPago: PaymentStatus | null) => {
+    async (pedidoId: string, _metodoPago: string | null, _estadoPago: PaymentStatus | null) => {
       setDeliveringOrderId(pedidoId);
       setDetailFeedback(null);
       playLightHaptic();
@@ -661,14 +661,11 @@ export default function DeliveryHomeScreen() {
       try {
         const payload: DeliverPayload = {
           estado: 'entregado',
+          estado_pago: 'pagado',
           entrega_con_excepcion: false,
           motivo_entrega_excepcion: null,
           entregado_en: new Date().toISOString(),
         };
-
-        if (metodoPago === 'efectivo' && estadoPago === 'pendiente') {
-          payload.estado_pago = 'pagado';
-        }
 
         const { error } = await supabase.from('pedidos').update(payload).eq('id', pedidoId);
 
@@ -697,7 +694,7 @@ export default function DeliveryHomeScreen() {
   );
 
   const handleEntregarConExcepcion = useCallback(
-    (pedidoId: string, metodoPago: string | null, estadoPago: PaymentStatus | null) => {
+    (pedidoId: string, _metodoPago: string | null, _estadoPago: PaymentStatus | null) => {
       playLightHaptic();
       Alert.alert(
         'Confirmar entrega con excepcion',
@@ -714,14 +711,11 @@ export default function DeliveryHomeScreen() {
                 try {
                   const payload: DeliverPayload = {
                     estado: 'entregado',
+                    estado_pago: 'pagado',
                     entrega_con_excepcion: true,
                     motivo_entrega_excepcion: 'captura_omitida_repartidor',
                     entregado_en: new Date().toISOString(),
                   };
-
-                  if (metodoPago === 'efectivo' && estadoPago === 'pendiente') {
-                    payload.estado_pago = 'pagado';
-                  }
 
                   const { error } = await supabase.from('pedidos').update(payload).eq('id', pedidoId);
 

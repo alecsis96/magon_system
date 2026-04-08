@@ -603,7 +603,7 @@ function App() {
         cliente_id: selectedCustomer?.id ?? null,
         tipo_pedido: tipoPedido,
         metodo_pago: metodoPago,
-        estado_pago: estadoPago,
+        estado_pago: tipoPedido === "mostrador" ? "pagado" : estadoPago,
         ...(tipoPedido === "domicilio"
           ? {
               estado: "en_preparacion",

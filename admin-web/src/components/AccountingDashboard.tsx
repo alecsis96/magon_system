@@ -218,6 +218,14 @@ function isDateKey(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+function isEffectivelyPaid(order: Pedido) {
+  return (
+    order.estado_pago === "pagado" ||
+    order.estado === "entregado" ||
+    order.tipo_pedido === "mostrador"
+  )
+}
+
 export function AccountingDashboard() {
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
   const [isLoading, setIsLoading] = useState(true)
@@ -422,11 +430,11 @@ export function AccountingDashboard() {
 
   const kpisHoy = useMemo(() => {
     const cobrado = pedidosHoy.reduce(
-      (sum, pedido) => sum + (pedido.estado_pago === "pagado" ? pedido.total : 0),
+      (sum, pedido) => sum + (isEffectivelyPaid(pedido) ? pedido.total : 0),
       0,
     )
     const pendiente = pedidosHoy.reduce(
-      (sum, pedido) => sum + (pedido.estado_pago === "pendiente" ? pedido.total : 0),
+      (sum, pedido) => sum + (!isEffectivelyPaid(pedido) ? pedido.total : 0),
       0,
     )
     const egresosTotal = egresosHoyNoCancelados.reduce(
@@ -446,7 +454,7 @@ export function AccountingDashboard() {
       pedidosHoy.reduce(
         (sum, pedido) =>
           sum +
-          (pedido.estado_pago === "pagado" && pedido.metodo_pago === "efectivo"
+          (isEffectivelyPaid(pedido) && pedido.metodo_pago === "efectivo"
             ? pedido.total
             : 0),
         0,
@@ -459,7 +467,7 @@ export function AccountingDashboard() {
       pedidosHoy.reduce(
         (sum, pedido) =>
           sum +
-          (pedido.estado_pago === "pagado" &&
+          (isEffectivelyPaid(pedido) &&
           pedido.metodo_pago === "transferencia"
             ? pedido.total
             : 0),
@@ -555,7 +563,7 @@ export function AccountingDashboard() {
       }
       const group = resolveGrouping(dateKey)
       const row = ensureRow(group.key, group.label)
-      if (pedido.estado_pago === "pagado") {
+      if (isEffectivelyPaid(pedido)) {
         row.cobrado += pedido.total
       } else {
         row.pendiente += pedido.total

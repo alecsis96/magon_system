@@ -5,9 +5,11 @@ import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
 import type { Cliente, EliminarPedidoAdminResult, Pedido } from "../types/database"
 
-type ActiveOrder = Pedido & {
+type OrderWithClient = Pedido & {
   clientes: Pick<Cliente, "nombre" | "notas_entrega"> | null
 }
+
+type MonitorView = "active" | "history"
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -20,6 +22,15 @@ const DEFAULT_ACCESS: AdminAccess = {
   isAdmin: false,
   email: null,
 }
+
+const HISTORY_ORDER_STATUSES = [
+  "entregado",
+  "finalizado",
+  "completado",
+  "cancelado",
+  "rechazado",
+  "devuelto",
+]
 
 function formatOrderType(tipoPedido: Pedido["tipo_pedido"]) {
   return tipoPedido === "domicilio" ? "Domicilio" : "Mostrador"
@@ -45,7 +56,40 @@ function getShortOrderId(orderId: string) {
   return `#${orderId.slice(0, 8).toUpperCase()}`
 }
 
-function getStatusAction(order: ActiveOrder) {
+function formatDateTime(isoDateTime: Pedido["fecha_creacion"]) {
+  if (!isoDateTime) {
+    return "Sin fecha"
+  }
+
+  return new Date(isoDateTime).toLocaleString("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+}
+
+function formatOrderStatus(estado: Pedido["estado"]) {
+  if (!estado) {
+    return "Sin estado"
+  }
+
+  if (estado === "en_preparacion") {
+    return "En preparacion"
+  }
+
+  if (estado === "en_camino") {
+    return "En camino"
+  }
+
+  if (estado === "entregado") {
+    return "Entregado"
+  }
+
+  return estado
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getStatusAction(order: OrderWithClient) {
   if (order.tipo_pedido === "mostrador") {
     return {
       label: "Entregar",
@@ -60,8 +104,11 @@ function getStatusAction(order: ActiveOrder) {
 }
 
 export function OrdersMonitor() {
-  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [activeOrders, setActiveOrders] = useState<OrderWithClient[]>([])
+  const [historyOrders, setHistoryOrders] = useState<OrderWithClient[]>([])
+  const [view, setView] = useState<MonitorView>("active")
+  const [isLoadingActive, setIsLoadingActive] = useState(true)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
 
@@ -75,9 +122,11 @@ export function OrdersMonitor() {
     }
   }
 
-  async function loadActiveOrders() {
+  async function loadActiveOrders(showLoader = true) {
     try {
-      setIsLoading(true)
+      if (showLoader) {
+        setIsLoadingActive(true)
+      }
 
       const { data, error } = await supabase
         .from("pedidos")
@@ -89,17 +138,46 @@ export function OrdersMonitor() {
         throw error
       }
 
-      setActiveOrders((data ?? []) as ActiveOrder[])
+      setActiveOrders((data ?? []) as OrderWithClient[])
     } catch (error) {
       console.error("Error al cargar pedidos activos:", error)
       toast.error("No se pudieron cargar los pedidos activos")
     } finally {
-      setIsLoading(false)
+      if (showLoader) {
+        setIsLoadingActive(false)
+      }
+    }
+  }
+
+  async function loadHistoryOrders(showLoader = true) {
+    try {
+      if (showLoader) {
+        setIsLoadingHistory(true)
+      }
+
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("*, clientes(nombre, notas_entrega)")
+        .in("estado", HISTORY_ORDER_STATUSES)
+        .order("fecha_creacion", { ascending: false })
+
+      if (error) {
+        throw error
+      }
+
+      setHistoryOrders((data ?? []) as OrderWithClient[])
+    } catch (error) {
+      console.error("Error al cargar pedidos historicos:", error)
+      toast.error("No se pudieron cargar los pedidos historicos")
+    } finally {
+      if (showLoader) {
+        setIsLoadingHistory(false)
+      }
     }
   }
 
   useEffect(() => {
-    void loadActiveOrders()
+    void Promise.all([loadActiveOrders(), loadHistoryOrders()])
     void refreshAdminAccess()
 
     const {
@@ -113,7 +191,7 @@ export function OrdersMonitor() {
     }
   }, [])
 
-  async function handleMarkPaid(order: ActiveOrder) {
+  async function handleMarkPaid(order: OrderWithClient) {
     if (order.estado_pago === "pagado") {
       return
     }
@@ -130,7 +208,7 @@ export function OrdersMonitor() {
         throw error
       }
 
-      await loadActiveOrders()
+      await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
       toast.success("Pago marcado como pagado")
     } catch (error) {
       console.error("Error al actualizar el pago:", error)
@@ -140,7 +218,7 @@ export function OrdersMonitor() {
     }
   }
 
-  async function handleAdvanceOrder(order: ActiveOrder) {
+  async function handleAdvanceOrder(order: OrderWithClient) {
     const statusAction = getStatusAction(order)
 
     try {
@@ -175,7 +253,7 @@ export function OrdersMonitor() {
         }
       }
 
-      await loadActiveOrders()
+      await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
       toast.success(
         statusAction.nextState === "entregado"
           ? "Pedido entregado"
@@ -189,7 +267,7 @@ export function OrdersMonitor() {
     }
   }
 
-  async function handleDeleteOrder(order: ActiveOrder) {
+  async function handleDeleteOrder(order: OrderWithClient, sourceView: MonitorView) {
     if (!adminAccess.isAuthenticated) {
       toast.error("Debes iniciar sesion como administrador")
       return
@@ -201,7 +279,7 @@ export function OrdersMonitor() {
     }
 
     const confirmed = window.confirm(
-      `Se eliminara el pedido ${getShortOrderId(order.id)} y se revertira su impacto en inventario. Deseas continuar?`,
+      `Se eliminara el pedido ${getShortOrderId(order.id)}. El sistema intentara revertir inventario y, si no es posible, eliminara con motivo explicito. Deseas continuar?`,
     )
 
     if (!confirmed) {
@@ -225,8 +303,22 @@ export function OrdersMonitor() {
         throw new Error("No se pudo eliminar el pedido")
       }
 
-      await loadActiveOrders()
-      toast.success("Pedido eliminado")
+      await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
+
+      if (result?.reversion_inventario_aplicada === false) {
+        const reason =
+          result?.motivo_reversion_inventario ||
+          "No se encontro inventario compatible para reversa"
+        toast(`Pedido eliminado sin reversa de inventario: ${reason}`, {
+          icon: "!",
+        })
+      } else {
+        toast.success(
+          sourceView === "history"
+            ? "Pedido historico eliminado"
+            : "Pedido eliminado",
+        )
+      }
     } catch (error) {
       console.error("Error al eliminar el pedido:", error)
       toast.error("No se pudo eliminar el pedido")
@@ -234,6 +326,9 @@ export function OrdersMonitor() {
       setProcessingOrderId(null)
     }
   }
+
+  const isLoading = view === "active" ? isLoadingActive : isLoadingHistory
+  const ordersToRender = view === "active" ? activeOrders : historyOrders
 
   return (
     <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
@@ -243,34 +338,69 @@ export function OrdersMonitor() {
             Operacion
           </p>
           <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">
-            Pedidos activos
+            {view === "active" ? "Pedidos activos" : "Historial de pedidos"}
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            Monitorea pagos y avanza el estado de cada pedido en tiempo real.
+            {view === "active"
+              ? "Monitorea pagos y avanza el estado de cada pedido en tiempo real."
+              : "Consulta ventas finalizadas con datos clave de auditoria."}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => void loadActiveOrders()}
-          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100"
-        >
-          Recargar pedidos
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-1">
+            <button
+              type="button"
+              onClick={() => setView("active")}
+              className={`rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] transition ${
+                view === "active"
+                  ? "bg-slate-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)]"
+                  : "text-slate-600 hover:bg-white"
+              }`}
+            >
+              Activos
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("history")}
+              className={`rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] transition ${
+                view === "history"
+                  ? "bg-slate-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)]"
+                  : "text-slate-600 hover:bg-white"
+              }`}
+            >
+              Historial
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              void (view === "active" ? loadActiveOrders() : loadHistoryOrders())
+            }
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100"
+          >
+            Recargar pedidos
+          </button>
+        </div>
       </div>
 
       <div className="mt-6">
         {isLoading ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-medium text-slate-500">
-            Cargando pedidos activos...
+            {view === "active"
+              ? "Cargando pedidos activos..."
+              : "Cargando historial de pedidos..."}
           </div>
-        ) : activeOrders.length === 0 ? (
+        ) : ordersToRender.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-medium text-slate-500">
-            No hay pedidos activos pendientes de entrega.
+            {view === "active"
+              ? "No hay pedidos activos pendientes de entrega."
+              : "No hay pedidos historicos para mostrar."}
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {activeOrders.map((order) => {
+            {ordersToRender.map((order) => {
               const statusAction = getStatusAction(order)
               const isProcessing = processingOrderId === order.id
               const paymentStatusClasses =
@@ -306,6 +436,17 @@ export function OrdersMonitor() {
                   </h3>
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    {view === "history" ? (
+                      <div className="col-span-2 min-w-0">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Fecha
+                        </dt>
+                        <dd className="mt-0.5 truncate font-semibold text-slate-900">
+                          {formatDateTime(order.fecha_creacion)}
+                        </dd>
+                      </div>
+                    ) : null}
+
                     <div className="min-w-0">
                       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                         Tipo
@@ -335,7 +476,7 @@ export function OrdersMonitor() {
 
                     <div className="min-w-0">
                       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Estado
+                        Estado pago
                       </dt>
                       <dd
                         className={`mt-0.5 truncate font-semibold ${
@@ -347,6 +488,17 @@ export function OrdersMonitor() {
                         {formatPaymentStatus(order.estado_pago)}
                       </dd>
                     </div>
+
+                    {view === "history" ? (
+                      <div className="col-span-2 min-w-0">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Estado pedido
+                        </dt>
+                        <dd className="mt-0.5 truncate font-semibold text-slate-900">
+                          {formatOrderStatus(order.estado)}
+                        </dd>
+                      </div>
+                    ) : null}
                   </dl>
 
                   {order.tipo_pedido === "domicilio" ? (
@@ -361,34 +513,38 @@ export function OrdersMonitor() {
                   ) : null}
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleMarkPaid(order)}
-                      disabled={isProcessing || order.estado_pago === "pagado"}
-                      className="min-w-0 flex-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[13px] font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      {order.estado_pago === "pendiente"
-                        ? "Marcar pagado"
-                        : "Pago confirmado"}
-                    </button>
+                    {view === "active" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleMarkPaid(order)}
+                          disabled={isProcessing || order.estado_pago === "pagado"}
+                          className="min-w-0 flex-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[13px] font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          {order.estado_pago === "pendiente"
+                            ? "Marcar pagado"
+                            : "Pago confirmado"}
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleAdvanceOrder(order)}
-                      disabled={isProcessing}
-                      className="min-w-0 flex-1 rounded-2xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
-                    >
-                      {statusAction.label}
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleAdvanceOrder(order)}
+                          disabled={isProcessing}
+                          className="min-w-0 flex-1 rounded-2xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                        >
+                          {statusAction.label}
+                        </button>
+                      </>
+                    ) : null}
 
                     {adminAccess.isAdmin ? (
                       <button
                         type="button"
-                        onClick={() => void handleDeleteOrder(order)}
+                        onClick={() => void handleDeleteOrder(order, view)}
                         disabled={isProcessing}
                         className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
-                        Eliminar pedido
+                        {view === "history" ? "Eliminar registro" : "Eliminar pedido"}
                       </button>
                     ) : null}
                   </div>

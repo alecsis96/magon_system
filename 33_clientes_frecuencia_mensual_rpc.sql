@@ -34,12 +34,12 @@ begin
 
     return query
     select
-        c.id as cliente_id,
-        c.nombre,
-        c.telefono,
-        count(p.id) as pedidos_mes,
+        c.id::uuid as cliente_id,
+        c.nombre::text as nombre,
+        c.telefono::text as telefono,
+        count(p.id)::bigint as pedidos_mes,
         coalesce(sum(p.total), 0)::numeric as total_mes,
-        max(p.fecha_creacion) as ultimo_pedido_en
+        max(p.fecha_creacion)::timestamp as ultimo_pedido_en
     from public.pedidos p
     join public.clientes c on c.id = p.cliente_id
     where p.cliente_id is not null

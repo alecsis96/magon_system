@@ -21,6 +21,8 @@ type ExternalMapWindow = Window & {
 }
 
 type FrequentPeriod = "current" | "previous"
+type CustomerDirectoryFilter = "all" | "pending_capture" | "pending_recapture"
+type CustomerDirectorySort = "alpha" | "most_orders"
 
 const ALLOWED_MAP_PROTOCOL = "https:"
 const ALLOWED_MAP_HOSTS = new Set(["www.google.com", "google.com", "maps.google.com"])
@@ -33,6 +35,8 @@ const EMPTY_FORM: CustomerFormData = {
 }
 
 const FREQUENT_CLIENT_LIMIT = 10
+const CUSTOMER_DIRECTORY_PAGE_SIZE = 20
+const MOST_ORDERS_HINT_LIMIT = 250
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -141,6 +145,24 @@ function hasFacadePhoto(cliente: Cliente) {
 
 function hasFacadeIssue(cliente: Cliente) {
   return cliente.foto_valida === false || !hasFacadePhoto(cliente)
+}
+
+function isPendingCapture(cliente: Cliente) {
+  return !hasFacadePhoto(cliente) || cliente.latitud === null || cliente.longitud === null
+}
+
+function mergeUniqueClients(currentClients: Cliente[], incomingClients: Cliente[]) {
+  const clientById = new Map<string, Cliente>()
+
+  for (const client of currentClients) {
+    clientById.set(client.id, client)
+  }
+
+  for (const client of incomingClients) {
+    clientById.set(client.id, client)
+  }
+
+  return Array.from(clientById.values())
 }
 
 function replaceClient(currentClients: Cliente[], updatedClient: Cliente) {
@@ -273,7 +295,14 @@ function TrashIcon({ className }: { className?: string }) {
 
 export function CustomerDirectoryAudit() {
   const [searchQuery, setSearchQuery] = useState("")
+  const [directoryFilter, setDirectoryFilter] =
+    useState<CustomerDirectoryFilter>("all")
+  const [directorySort, setDirectorySort] = useState<CustomerDirectorySort>("alpha")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [hasMoreClients, setHasMoreClients] = useState(false)
+  const [isLoadingMoreClients, setIsLoadingMoreClients] = useState(false)
   const [clients, setClients] = useState<Cliente[]>([])
+  const [mostOrdersHints, setMostOrdersHints] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedClient, setSelectedClient] = useState<Cliente | null>(null)
@@ -294,21 +323,92 @@ export function CustomerDirectoryAudit() {
   const [frequentClientsError, setFrequentClientsError] = useState<string | null>(null)
 
   useEffect(() => {
+    setCurrentPage(1)
+    setHasMoreClients(false)
+  }, [searchQuery, directoryFilter, directorySort])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    if (directorySort !== "most_orders") {
+      setMostOrdersHints({})
+      return
+    }
+
+    void (async () => {
+      try {
+        const monthStart = toMonthStartDateKey(getPeriodMonthStart("current"))
+        const { data, error } = await supabase.rpc("get_clientes_frecuencia_mensual", {
+          p_month: monthStart,
+          p_limit: MOST_ORDERS_HINT_LIMIT,
+        })
+
+        if (error) {
+          throw error
+        }
+
+        if (isCancelled) {
+          return
+        }
+
+        const nextHints: Record<string, number> = {}
+
+        for (const client of data ?? []) {
+          nextHints[client.cliente_id] = client.pedidos_mes
+        }
+
+        setMostOrdersHints(nextHints)
+      } catch (error) {
+        if (isCancelled) {
+          return
+        }
+
+        console.error("Error al cargar orden por pedidos:", error)
+        setMostOrdersHints({})
+      }
+    })()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [directorySort])
+
+  useEffect(() => {
     let isCancelled = false
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          setIsLoading(true)
-          setLoadError(null)
+          if (currentPage === 1) {
+            setIsLoading(true)
+            setLoadError(null)
+          } else {
+            setIsLoadingMoreClients(true)
+          }
 
           const trimmedSearch = searchQuery.trim()
-          let query = supabase.from("clientes").select("*").order("nombre").limit(80)
+          const pageFrom = (currentPage - 1) * CUSTOMER_DIRECTORY_PAGE_SIZE
+          const pageTo = pageFrom + CUSTOMER_DIRECTORY_PAGE_SIZE
+          let query = supabase
+            .from("clientes")
+            .select("*")
+            .order("nombre", { ascending: true })
+            .range(pageFrom, pageTo)
 
           if (trimmedSearch) {
             const sanitizedSearch = trimmedSearch.replace(/,/g, " ")
             query = query.or(
               `nombre.ilike.%${sanitizedSearch}%,telefono.ilike.%${sanitizedSearch}%`,
             )
+          }
+
+          if (directoryFilter === "pending_capture") {
+            query = query.or(
+              "url_foto_fachada.is.null,url_foto_fachada.eq.,latitud.is.null,longitud.is.null",
+            )
+          }
+
+          if (directoryFilter === "pending_recapture") {
+            query = query.eq("foto_valida", false)
           }
 
           const { data, error } = await query
@@ -321,18 +421,66 @@ export function CustomerDirectoryAudit() {
             return
           }
 
-          setClients((data ?? []) as Cliente[])
+          const loadedClients = ((data ?? []) as Cliente[]).slice(0, CUSTOMER_DIRECTORY_PAGE_SIZE)
+          const hasMore = (data ?? []).length > CUSTOMER_DIRECTORY_PAGE_SIZE
+
+          let nextClients = loadedClients
+
+          if (directoryFilter === "pending_capture") {
+            nextClients = loadedClients.filter(isPendingCapture)
+          }
+
+          const sortByMostOrders = (a: Cliente, b: Cliente) => {
+            const bScore = mostOrdersHints[b.id] ?? -1
+            const aScore = mostOrdersHints[a.id] ?? -1
+            const byOrders = bScore - aScore
+
+            if (byOrders !== 0) {
+              return byOrders
+            }
+
+            return a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" })
+          }
+
+          const applySort = (inputClients: Cliente[]) => {
+            if (directorySort === "most_orders") {
+              return [...inputClients].sort(sortByMostOrders)
+            }
+
+            return [...inputClients].sort((a, b) =>
+              a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
+            )
+          }
+
+          setHasMoreClients(hasMore)
+          setClients((currentClients) => {
+            if (currentPage === 1) {
+              return applySort(nextClients)
+            }
+
+            return applySort(mergeUniqueClients(currentClients, nextClients))
+          })
         } catch (error) {
           if (isCancelled) {
             return
           }
 
           console.error("Error al cargar directorio de clientes:", error)
-          setLoadError(getErrorMessage(error))
-          setClients([])
+
+          if (currentPage === 1) {
+            setLoadError(getErrorMessage(error))
+            setClients([])
+          } else {
+            setHasMoreClients(false)
+            toast.error("No se pudieron cargar mas clientes.")
+          }
         } finally {
           if (!isCancelled) {
-            setIsLoading(false)
+            if (currentPage === 1) {
+              setIsLoading(false)
+            }
+
+            setIsLoadingMoreClients(false)
           }
         }
       })()
@@ -342,7 +490,7 @@ export function CustomerDirectoryAudit() {
       isCancelled = true
       window.clearTimeout(timer)
     }
-  }, [searchQuery])
+  }, [searchQuery, directoryFilter, directorySort, currentPage, mostOrdersHints])
 
   useEffect(() => {
     let isCancelled = false
@@ -711,6 +859,67 @@ export function CustomerDirectoryAudit() {
           placeholder="Buscar por nombre o telefono"
           className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
         />
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setDirectoryFilter("all")}
+            className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+              directoryFilter === "all"
+                ? "bg-slate-900 text-white focus:ring-slate-200"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+            }`}
+          >
+            Todos
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirectoryFilter("pending_capture")}
+            className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+              directoryFilter === "pending_capture"
+                ? "bg-slate-900 text-white focus:ring-slate-200"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+            }`}
+          >
+            Pendiente captura
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirectoryFilter("pending_recapture")}
+            className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+              directoryFilter === "pending_recapture"
+                ? "bg-slate-900 text-white focus:ring-slate-200"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+            }`}
+          >
+            Pendiente recaptura
+          </button>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setDirectorySort("alpha")}
+            className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+              directorySort === "alpha"
+                ? "bg-slate-900 text-white focus:ring-slate-200"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+            }`}
+          >
+            A-Z
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirectorySort("most_orders")}
+            className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+              directorySort === "most_orders"
+                ? "bg-slate-900 text-white focus:ring-slate-200"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+            }`}
+          >
+            Mas pedidos
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 space-y-3 px-3 py-3">
@@ -847,6 +1056,17 @@ export function CustomerDirectoryAudit() {
                 </button>
               )
             })}
+
+            {hasMoreClients ? (
+              <button
+                type="button"
+                onClick={() => setCurrentPage((current) => current + 1)}
+                disabled={isLoadingMoreClients}
+                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {isLoadingMoreClients ? "Cargando..." : "Cargar mas"}
+              </button>
+            ) : null}
           </div>
         )}
       </div>

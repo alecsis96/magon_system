@@ -239,6 +239,8 @@ export function CustomerDirectoryAudit() {
   const [modalError, setModalError] = useState<string | null>(null)
   const [keyboardInset, setKeyboardInset] = useState(0)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false)
+  const [fullscreenImageLoadFailed, setFullscreenImageLoadFailed] = useState(false)
 
   useEffect(() => {
     let isCancelled = false
@@ -302,6 +304,8 @@ export function CustomerDirectoryAudit() {
     setFormData(mapClientToForm(selectedClient))
     setModalError(null)
     setImageLoadFailed(false)
+    setIsImageViewerOpen(false)
+    setFullscreenImageLoadFailed(false)
   }, [selectedClient])
 
   useEffect(() => {
@@ -362,6 +366,22 @@ export function CustomerDirectoryAudit() {
     setModalError(null)
     setKeyboardInset(0)
     setImageLoadFailed(false)
+    setIsImageViewerOpen(false)
+    setFullscreenImageLoadFailed(false)
+  }
+
+  function handleOpenImageViewer() {
+    if (!selectedClientHasFacade || imageLoadFailed) {
+      return
+    }
+
+    setFullscreenImageLoadFailed(false)
+    setIsImageViewerOpen(true)
+  }
+
+  function handleCloseImageViewer() {
+    setIsImageViewerOpen(false)
+    setFullscreenImageLoadFailed(false)
   }
 
   function handleOpenGoogleMaps() {
@@ -498,7 +518,7 @@ export function CustomerDirectoryAudit() {
       setIsSaving(true)
       setModalError(null)
 
-      const { data, error } = await supabase
+      const { error: updateError } = await supabase
         .from("clientes")
         .update({
           nombre,
@@ -508,14 +528,27 @@ export function CustomerDirectoryAudit() {
           notas_entrega: buildNotasEntrega(direccionHabitual, referencias),
         })
         .eq("id", selectedClient.id)
-        .select()
-        .single()
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
-      const updatedClient = data as Cliente
+      const { data: updatedClient, error: fetchError } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("id", selectedClient.id)
+        .maybeSingle()
+
+      if (fetchError) {
+        throw fetchError
+      }
+
+      if (!updatedClient) {
+        throw new Error(
+          "No se pudo recuperar el cliente actualizado. Verifica permisos o que el cliente exista.",
+        )
+      }
+
       setSelectedClient(updatedClient)
       setClients((currentClients) => replaceClient(currentClients, updatedClient))
       toast.success("Cliente actualizado.")
@@ -626,12 +659,19 @@ export function CustomerDirectoryAudit() {
               <article className="overflow-hidden rounded-3xl bg-slate-100 shadow-sm ring-1 ring-slate-200">
                 <div className="h-32 bg-slate-200">
                   {selectedClientHasFacade && !imageLoadFailed ? (
-                    <img
-                      src={selectedClient.url_foto_fachada ?? ""}
-                      alt={`Fachada de ${selectedClient.nombre}`}
-                      className="h-full w-full object-cover"
-                      onError={() => setImageLoadFailed(true)}
-                    />
+                    <button
+                      type="button"
+                      onClick={handleOpenImageViewer}
+                      className="h-full w-full"
+                      aria-label="Ver fachada en pantalla completa"
+                    >
+                      <img
+                        src={selectedClient.url_foto_fachada ?? ""}
+                        alt={`Fachada de ${selectedClient.nombre}`}
+                        className="h-full w-full object-cover"
+                        onError={() => setImageLoadFailed(true)}
+                      />
+                    </button>
                   ) : (
                     <div className="flex h-full items-center justify-center px-4 text-center text-xs font-medium text-slate-600">
                       Fachada no disponible
@@ -846,6 +886,31 @@ export function CustomerDirectoryAudit() {
               {isSaving ? "Guardando..." : "Guardar Cambios"}
             </button>
           </div>
+
+          {isImageViewerOpen ? (
+            <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/95 p-4">
+              <button
+                type="button"
+                onClick={handleCloseImageViewer}
+                className="absolute right-4 top-4 min-h-12 min-w-12 rounded-full border border-white/50 bg-black/60 px-4 text-sm font-semibold text-white transition hover:bg-black/70 focus:outline-none focus:ring-4 focus:ring-white/30"
+              >
+                Cerrar
+              </button>
+
+              {selectedClientHasFacade && !fullscreenImageLoadFailed ? (
+                <img
+                  src={selectedClient.url_foto_fachada ?? ""}
+                  alt={`Fachada de ${selectedClient.nombre} en pantalla completa`}
+                  className="max-h-[88vh] w-auto max-w-full rounded-2xl object-contain"
+                  onError={() => setFullscreenImageLoadFailed(true)}
+                />
+              ) : (
+                <div className="rounded-2xl bg-white/10 px-6 py-5 text-center text-sm font-medium text-slate-100">
+                  No se pudo cargar la imagen en pantalla completa.
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

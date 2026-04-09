@@ -518,7 +518,7 @@ export function CustomerDirectoryAudit() {
       setIsSaving(true)
       setModalError(null)
 
-      const { error: updateError } = await supabase
+      const { data: updatedRow, error: updateError } = await supabase
         .from("clientes")
         .update({
           nombre,
@@ -528,9 +528,17 @@ export function CustomerDirectoryAudit() {
           notas_entrega: buildNotasEntrega(direccionHabitual, referencias),
         })
         .eq("id", selectedClient.id)
+        .select("id")
+        .maybeSingle()
 
       if (updateError) {
         throw updateError
+      }
+
+      if (!updatedRow) {
+        throw new Error(
+          "No se pudo aplicar la actualizacion. Verifica permisos o que el cliente exista.",
+        )
       }
 
       const { data: updatedClient, error: fetchError } = await supabase

@@ -617,6 +617,16 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      actualizar_cliente_admin: {
+        Args: {
+          p_cliente_id: UUID;
+          p_nombre: string;
+          p_telefono: string;
+          p_direccion_habitual?: string | null;
+          p_referencias?: string | null;
+        };
+        Returns: Cliente;
+      };
       es_usuario_admin: {
         Args: Record<string, never>;
         Returns: boolean;

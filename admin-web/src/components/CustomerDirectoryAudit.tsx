@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
+import { getAdminAccess } from "../lib/admin"
 import { supabase } from "../lib/supabase"
 import type { Cliente } from "../types/database"
 
@@ -40,26 +41,27 @@ function getErrorMessage(error: unknown) {
   return "No se pudo completar la operacion."
 }
 
-function buildNotasEntrega(
-  direccionHabitual: string,
-  referencias: string,
-): string | null {
-  const address = direccionHabitual.trim()
-  const refs = referencias.trim()
+function getCustomerSaveErrorMessage(error: unknown) {
+  const message = getErrorMessage(error)
+  const normalizedMessage = message.toLowerCase()
 
-  if (!address && !refs) {
-    return null
+  if (normalizedMessage.includes("debes iniciar sesion")) {
+    return "Tu sesion admin expiro. Volve a iniciar sesion para guardar cambios."
   }
 
-  if (!refs) {
-    return address
+  if (normalizedMessage.includes("solo un administrador")) {
+    return "Tu cuenta no tiene permisos de administrador para editar clientes."
   }
 
-  if (!address) {
-    return `Referencias: ${refs}`
+  if (normalizedMessage.includes("no se encontro el cliente")) {
+    return "El cliente ya no existe o fue eliminado en otra sesion."
   }
 
-  return `${address}\nReferencias: ${refs}`
+  if (normalizedMessage.includes("nombre y telefono")) {
+    return "Nombre y telefono son obligatorios para guardar el cliente."
+  }
+
+  return message
 }
 
 function getDireccionHabitual(cliente: Cliente) {
@@ -518,43 +520,31 @@ export function CustomerDirectoryAudit() {
       setIsSaving(true)
       setModalError(null)
 
-      const { data: updatedRow, error: updateError } = await supabase
-        .from("clientes")
-        .update({
-          nombre,
-          telefono,
-          direccion_habitual: direccionHabitual || null,
-          referencias: referencias || null,
-          notas_entrega: buildNotasEntrega(direccionHabitual, referencias),
-        })
-        .eq("id", selectedClient.id)
-        .select("id")
-        .maybeSingle()
+      const access = await getAdminAccess()
+
+      if (!access.isAuthenticated || !access.isAdmin) {
+        throw new Error(
+          "Solo un administrador autenticado puede editar clientes desde este panel.",
+        )
+      }
+
+      const { data: updatedClient, error: updateError } = await supabase.rpc(
+        "actualizar_cliente_admin",
+        {
+          p_cliente_id: selectedClient.id,
+          p_nombre: nombre,
+          p_telefono: telefono,
+          p_direccion_habitual: direccionHabitual || null,
+          p_referencias: referencias || null,
+        },
+      )
 
       if (updateError) {
         throw updateError
       }
 
-      if (!updatedRow) {
-        throw new Error(
-          "No se pudo aplicar la actualizacion. Verifica permisos o que el cliente exista.",
-        )
-      }
-
-      const { data: updatedClient, error: fetchError } = await supabase
-        .from("clientes")
-        .select("*")
-        .eq("id", selectedClient.id)
-        .maybeSingle()
-
-      if (fetchError) {
-        throw fetchError
-      }
-
       if (!updatedClient) {
-        throw new Error(
-          "No se pudo recuperar el cliente actualizado. Verifica permisos o que el cliente exista.",
-        )
+        throw new Error("Supabase no devolvio el cliente actualizado.")
       }
 
       setSelectedClient(updatedClient)
@@ -562,7 +552,7 @@ export function CustomerDirectoryAudit() {
       toast.success("Cliente actualizado.")
     } catch (error) {
       console.error("Error al guardar cambios del cliente:", error)
-      const message = getErrorMessage(error)
+      const message = getCustomerSaveErrorMessage(error)
       setModalError(message)
       toast.error(message)
     } finally {

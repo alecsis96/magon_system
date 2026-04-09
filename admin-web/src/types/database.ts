@@ -528,6 +528,14 @@ export interface EliminarPedidoAdminResult extends Record<string, unknown> {
     pechugas_chicas: number;
   };
 }
+export interface ClienteFrecuenciaMensualRpc extends Record<string, unknown> {
+  cliente_id: UUID;
+  nombre: string;
+  telefono: string;
+  pedidos_mes: number;
+  total_mes: number;
+  ultimo_pedido_en: ISODateTimeString | null;
+}
 export interface Database {
   public: {
     Tables: {
@@ -648,6 +656,13 @@ export interface Database {
           p_pedido_id: UUID;
         };
         Returns: Json;
+      };
+      get_clientes_frecuencia_mensual: {
+        Args: {
+          p_month?: ISODateString | null;
+          p_limit?: number | null;
+        };
+        Returns: ClienteFrecuenciaMensualRpc[];
       };
       guardar_producto_admin: {
         Args: {

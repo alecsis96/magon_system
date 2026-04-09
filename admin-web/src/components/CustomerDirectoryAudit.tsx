@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess } from "../lib/admin"
+import { formatDateTime, formatMonthKey } from "../lib/datetime"
 import { supabase } from "../lib/supabase"
-import type { Cliente } from "../types/database"
+import type { Cliente, ClienteFrecuenciaMensualRpc } from "../types/database"
 
 type CustomerFormData = {
   nombre: string
@@ -19,6 +20,8 @@ type ExternalMapWindow = Window & {
   ReactNativeWebView?: ReactNativeWebViewBridge
 }
 
+type FrequentPeriod = "current" | "previous"
+
 const ALLOWED_MAP_PROTOCOL = "https:"
 const ALLOWED_MAP_HOSTS = new Set(["www.google.com", "google.com", "maps.google.com"])
 
@@ -27,6 +30,46 @@ const EMPTY_FORM: CustomerFormData = {
   telefono: "",
   direccionHabitual: "",
   referencias: "",
+}
+
+const FREQUENT_CLIENT_LIMIT = 10
+
+const currencyFormatter = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+  maximumFractionDigits: 0,
+})
+
+function getPeriodMonthStart(period: FrequentPeriod) {
+  const monthOffset = period === "current" ? 0 : -1
+  const date = new Date()
+  return new Date(date.getFullYear(), date.getMonth() + monthOffset, 1)
+}
+
+function toMonthStartDateKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  return `${year}-${month}-01`
+}
+
+function toMonthKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  return `${year}-${month}`
+}
+
+function getFrequentPeriodMonthLabel(period: FrequentPeriod) {
+  return formatMonthKey(toMonthKey(getPeriodMonthStart(period)))
+}
+
+function formatFrequentLastOrder(value: string | null) {
+  if (!value) {
+    return "Sin pedidos en el periodo"
+  }
+
+  return formatDateTime(value, {
+    fallback: "Sin pedidos en el periodo",
+  })
 }
 
 function getErrorMessage(error: unknown) {
@@ -243,6 +286,12 @@ export function CustomerDirectoryAudit() {
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false)
   const [fullscreenImageLoadFailed, setFullscreenImageLoadFailed] = useState(false)
+  const [frequentPeriod, setFrequentPeriod] = useState<FrequentPeriod>("current")
+  const [frequentClients, setFrequentClients] = useState<ClienteFrecuenciaMensualRpc[]>(
+    [],
+  )
+  const [isLoadingFrequentClients, setIsLoadingFrequentClients] = useState(true)
+  const [frequentClientsError, setFrequentClientsError] = useState<string | null>(null)
 
   useEffect(() => {
     let isCancelled = false
@@ -294,6 +343,49 @@ export function CustomerDirectoryAudit() {
       window.clearTimeout(timer)
     }
   }, [searchQuery])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    void (async () => {
+      try {
+        setIsLoadingFrequentClients(true)
+        setFrequentClientsError(null)
+
+        const monthStart = toMonthStartDateKey(getPeriodMonthStart(frequentPeriod))
+        const { data, error } = await supabase.rpc("get_clientes_frecuencia_mensual", {
+          p_month: monthStart,
+          p_limit: FREQUENT_CLIENT_LIMIT,
+        })
+
+        if (error) {
+          throw error
+        }
+
+        if (isCancelled) {
+          return
+        }
+
+        setFrequentClients(data ?? [])
+      } catch (error) {
+        if (isCancelled) {
+          return
+        }
+
+        console.error("Error al cargar clientes frecuentes:", error)
+        setFrequentClientsError(getErrorMessage(error))
+        setFrequentClients([])
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingFrequentClients(false)
+        }
+      }
+    })()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [frequentPeriod])
 
   useEffect(() => {
     if (!selectedClient) {
@@ -361,6 +453,45 @@ export function CustomerDirectoryAudit() {
 
   function handleOpenClient(cliente: Cliente) {
     setSelectedClient(cliente)
+  }
+
+  async function handleOpenFrequentClient(clienteFrecuente: ClienteFrecuenciaMensualRpc) {
+    const alreadyLoadedClient = clients.find(
+      (client) => client.id === clienteFrecuente.cliente_id,
+    )
+
+    if (alreadyLoadedClient) {
+      setSelectedClient(alreadyLoadedClient)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("id", clienteFrecuente.cliente_id)
+        .maybeSingle()
+
+      if (error) {
+        throw error
+      }
+
+      if (!data) {
+        throw new Error("No se encontro el cliente seleccionado.")
+      }
+
+      setClients((currentClients) => {
+        if (currentClients.some((client) => client.id === data.id)) {
+          return currentClients
+        }
+
+        return [data, ...currentClients]
+      })
+      setSelectedClient(data)
+    } catch (error) {
+      console.error("Error al abrir cliente frecuente:", error)
+      toast.error(getErrorMessage(error))
+    }
   }
 
   function handleCloseClient() {
@@ -564,6 +695,7 @@ export function CustomerDirectoryAudit() {
     selectedClient &&
     selectedClient.foto_valida !== false &&
     hasFacadePhoto(selectedClient)
+  const frequentMonthLabel = getFrequentPeriodMonthLabel(frequentPeriod)
 
   return (
     <section className="flex flex-1 flex-col bg-gray-50">
@@ -581,7 +713,97 @@ export function CustomerDirectoryAudit() {
         />
       </div>
 
-      <div className="flex-1 px-3 py-3">
+      <div className="flex-1 space-y-3 px-3 py-3">
+        <section className="rounded-3xl bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-black text-slate-900">Clientes frecuentes</h2>
+              <p className="mt-1 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                {frequentMonthLabel}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setFrequentPeriod("current")}
+              className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+                frequentPeriod === "current"
+                  ? "bg-slate-900 text-white focus:ring-slate-200"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+              }`}
+            >
+              Este mes
+            </button>
+            <button
+              type="button"
+              onClick={() => setFrequentPeriod("previous")}
+              className={`rounded-full px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
+                frequentPeriod === "previous"
+                  ? "bg-slate-900 text-white focus:ring-slate-200"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100"
+              }`}
+            >
+              Mes anterior
+            </button>
+          </div>
+
+          <div className="mt-3">
+            {isLoadingFrequentClients ? (
+              <div className="rounded-2xl bg-slate-50 px-3 py-4 text-sm font-medium text-slate-500">
+                Cargando clientes frecuentes...
+              </div>
+            ) : frequentClientsError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-4 text-sm font-medium text-rose-700">
+                {frequentClientsError}
+              </div>
+            ) : frequentClients.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
+                Sin clientes frecuentes en este periodo.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {frequentClients.map((client) => (
+                  <button
+                    key={client.cliente_id}
+                    type="button"
+                    onClick={() => void handleOpenFrequentClient(client)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-100"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {client.nombre}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">{client.telefono}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white">
+                        {client.pedidos_mes} pedidos
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-xl bg-slate-50 px-2.5 py-2">
+                        <p className="font-medium text-slate-500">Total del mes</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">
+                          {currencyFormatter.format(client.total_mes)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-2.5 py-2">
+                        <p className="font-medium text-slate-500">Ultimo pedido</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">
+                          {formatFrequentLastOrder(client.ultimo_pedido_en)}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
         {isLoading ? (
           <div className="rounded-3xl bg-white px-4 py-6 text-sm font-medium text-slate-500 shadow-sm">
             Cargando clientes...

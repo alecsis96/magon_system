@@ -112,8 +112,10 @@ function formatCoordinate(value: number | null) {
   return value.toFixed(6)
 }
 
-function hasCoordinates(cliente: Cliente) {
-  return cliente.latitud !== null && cliente.longitud !== null
+function hasCoordinates(
+  cliente: Cliente | null,
+): cliente is Cliente & { latitud: number; longitud: number } {
+  return cliente !== null && cliente.latitud !== null && cliente.longitud !== null
 }
 
 function buildGoogleMapsUrl(latitud: number, longitud: number) {

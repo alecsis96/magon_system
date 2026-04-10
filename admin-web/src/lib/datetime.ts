@@ -2,9 +2,10 @@ const DEFAULT_LOCALE = "es-MX"
 const DEFAULT_TIME_ZONE = "America/Mexico_City"
 
 const ISO_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const ISO_TIME_ZONE_PATTERN = /(?:Z|[+-]\d{2}:\d{2})$/i
 const ISO_NAIVE_DATE_TIME_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/
+const POSTGRES_DATE_TIME_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:\s*(Z|[+-]\d{2}(?::?\d{2})?))?$/i
 
 type DateInput = Date | string | number | null | undefined
 
@@ -88,6 +89,58 @@ function parseNaiveDateTime(value: string, assumeUtcForNaive: boolean) {
   return parsed
 }
 
+function normalizeOffset(value: string) {
+  if (value.toUpperCase() === "Z") {
+    return "Z"
+  }
+
+  const match = /^([+-])(\d{2})(?::?(\d{2}))?$/.exec(value)
+
+  if (!match) {
+    return null
+  }
+
+  const sign = match[1]
+  const hours = Number(match[2])
+  const minutes = Number(match[3] ?? "00")
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours > 23 || minutes > 59) {
+    return null
+  }
+
+  return `${sign}${match[2]}:${(match[3] ?? "00").padStart(2, "0")}`
+}
+
+function parsePostgresDateTime(value: string, assumeUtcForNaive: boolean) {
+  const match = POSTGRES_DATE_TIME_PATTERN.exec(value)
+
+  if (!match) {
+    return null
+  }
+
+  const [, year, month, day, hour, minute, second, fraction = "", offsetRaw] = match
+  const milliseconds = fraction ? fraction.slice(0, 3).padEnd(3, "0") : "000"
+
+  if (!offsetRaw) {
+    return parseNaiveDateTime(
+      `${year}-${month}-${day}T${hour}:${minute}:${second}${fraction ? `.${fraction}` : ""}`,
+      assumeUtcForNaive,
+    )
+  }
+
+  const normalizedOffset = normalizeOffset(offsetRaw)
+
+  if (!normalizedOffset) {
+    return null
+  }
+
+  const parsed = new Date(
+    `${year}-${month}-${day}T${hour}:${minute}:${second}.${milliseconds}${normalizedOffset === "Z" ? "Z" : normalizedOffset}`,
+  )
+
+  return isValidDate(parsed) ? parsed : null
+}
+
 function normalizeInputDate(value: DateInput) {
   if (value == null) {
     return null
@@ -149,14 +202,10 @@ export function parseDateTime(
   }
 
   const { assumeUtcForNaive = true } = options
-  const hasTimeZone = ISO_TIME_ZONE_PATTERN.test(normalized)
+  const parsedPostgresDateTime = parsePostgresDateTime(normalized, assumeUtcForNaive)
 
-  if (!hasTimeZone) {
-    const parsedNaive = parseNaiveDateTime(normalized, assumeUtcForNaive)
-
-    if (parsedNaive) {
-      return parsedNaive
-    }
+  if (parsedPostgresDateTime) {
+    return parsedPostgresDateTime
   }
 
   const parsed = new Date(normalized)

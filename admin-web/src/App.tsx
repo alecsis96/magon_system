@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Toaster, toast } from "react-hot-toast"
 import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
@@ -25,6 +25,8 @@ import {
   generarTextoTicket,
   type PrintableOrder,
 } from "./lib/printing"
+import { getAdminAccess, type AdminAccess } from "./lib/admin"
+import { getTodayDateKey } from "./lib/datetime"
 import { sendDispatchPushNotification } from "./lib/push"
 import { supabase } from "./lib/supabase"
 import type {
@@ -39,6 +41,12 @@ const currencyFormatter = new Intl.NumberFormat("es-MX", {
   currency: "MXN",
   maximumFractionDigits: 0,
 })
+
+const DEFAULT_ADMIN_ACCESS: AdminAccess = {
+  isAuthenticated: false,
+  isAdmin: false,
+  email: null,
+}
 
 type ProductoDetalle = {
   piezasInventario: number
@@ -179,10 +187,7 @@ function getCartItemMermaBreakdown(item: CartItem) {
 }
 
 function getTodayLocalISODate() {
-  const now = new Date()
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-
-  return localDate.toISOString().slice(0, 10)
+  return getTodayDateKey()
 }
 
 function isUuid(value: string) {
@@ -329,6 +334,23 @@ function App() {
     useState<boolean>(true)
   const [isCheckingInventoryStatus, setIsCheckingInventoryStatus] =
     useState<boolean>(true)
+  const [isPosAdminPanelOpen, setIsPosAdminPanelOpen] = useState(false)
+  const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ADMIN_ACCESS)
+  const [isLoadingAdminAccess, setIsLoadingAdminAccess] = useState(true)
+  const posAdminPanelRef = useRef<HTMLDivElement | null>(null)
+
+  const refreshAdminAccess = useCallback(async () => {
+    try {
+      setIsLoadingAdminAccess(true)
+      const nextAccess = await getAdminAccess()
+      setAdminAccess(nextAccess)
+    } catch (error) {
+      console.error("Error al validar acceso admin:", error)
+      setAdminAccess(DEFAULT_ADMIN_ACCESS)
+    } finally {
+      setIsLoadingAdminAccess(false)
+    }
+  }, [])
 
   const checkTodayInventoryStatus = useCallback(async (targetDate: string) => {
     try {
@@ -367,6 +389,20 @@ function App() {
   }, [checkTodayInventoryStatus, todayIsoDate])
 
   useEffect(() => {
+    void refreshAdminAccess()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void refreshAdminAccess()
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [refreshAdminAccess])
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       const nextDate = getTodayLocalISODate()
 
@@ -394,6 +430,42 @@ function App() {
       window.removeEventListener("focus", handleFocus)
     }
   }, [checkTodayInventoryStatus])
+
+  useEffect(() => {
+    if (!isPosAdminPanelOpen) {
+      return
+    }
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (!posAdminPanelRef.current) {
+        return
+      }
+
+      if (!posAdminPanelRef.current.contains(event.target as Node)) {
+        setIsPosAdminPanelOpen(false)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsPosAdminPanelOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown)
+    window.addEventListener("keydown", handleEscape)
+
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointerDown)
+      window.removeEventListener("keydown", handleEscape)
+    }
+  }, [isPosAdminPanelOpen])
+
+  useEffect(() => {
+    if (isMoreMenuOpen || isCheckoutModalOpen || isDispatchPromptOpen || activeTab !== "POS") {
+      setIsPosAdminPanelOpen(false)
+    }
+  }, [activeTab, isCheckoutModalOpen, isDispatchPromptOpen, isMoreMenuOpen])
 
   function handleAddToCart(producto: Producto) {
     setCart((currentCart) => [
@@ -759,6 +831,54 @@ function App() {
     activeTab === "CONTABILIDAD" ||
     activeTab === "CLIENTES" ||
     isMoreMenuOpen
+  const adminAvatarRingClass = adminAccess.isAdmin
+    ? "ring-emerald-500"
+    : adminAccess.isAuthenticated
+      ? "ring-amber-400"
+      : "ring-gray-300"
+  const adminAvatarStatusClass = adminAccess.isAdmin
+    ? "bg-emerald-500"
+    : adminAccess.isAuthenticated
+      ? "bg-amber-400"
+      : "bg-gray-300"
+
+  const posHeaderAdminAction = (
+    <div className="relative" ref={posAdminPanelRef}>
+      <button
+        type="button"
+        onClick={() => setIsPosAdminPanelOpen((current) => !current)}
+        className={`relative inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm ring-2 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 ${adminAvatarRingClass}`}
+        aria-label="Abrir acceso de administrador"
+        aria-expanded={isPosAdminPanelOpen}
+      >
+        <span className="text-sm font-black uppercase" aria-hidden="true">
+          {adminAccess.email?.[0]?.toUpperCase() ?? "A"}
+        </span>
+        <span
+          className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${adminAvatarStatusClass}`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {isPosAdminPanelOpen ? (
+        <div className="absolute right-0 top-[calc(100%+0.55rem)] z-30 w-[min(92vw,18rem)] rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-[0_20px_45px_rgba(15,23,42,0.18)]">
+          <AdminAccessButton
+            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-none transition hover:bg-slate-50 focus:ring-slate-100"
+            panelClassName="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(92vw,22rem)] rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
+          />
+          <p className="mt-2 text-[11px] text-slate-500">
+            {isLoadingAdminAccess
+              ? "Validando estado de sesion..."
+              : adminAccess.isAdmin
+                ? "Admin activo"
+                : adminAccess.isAuthenticated
+                  ? "Sesion iniciada sin rol admin"
+                  : "Sin sesion admin"}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  )
 
   return (
     <main className="min-h-screen overflow-x-clip bg-gray-100 p-4 pb-24 text-slate-900 sm:p-6 sm:pb-28">
@@ -798,7 +918,10 @@ function App() {
           <>
             <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
               <section className="flex-1 overflow-y-auto pb-24 md:w-[60%] md:pb-4">
-                <POSMenu onSelectProduct={handleAddToCart} />
+                <POSMenu
+                  onSelectProduct={handleAddToCart}
+                  headerAction={posHeaderAdminAction}
+                />
               </section>
             </div>
 

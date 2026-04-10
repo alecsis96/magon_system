@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { supabase } from "../lib/supabase"
 import type { Producto } from "../types/database"
 
@@ -12,6 +12,7 @@ type ProductFilter = "todos" | "pollos" | "combos" | "extras"
 
 interface POSMenuProps {
   onSelectProduct: (producto: Producto) => void
+  headerAction?: ReactNode
 }
 
 function normalize(value: string | null | undefined) {
@@ -87,7 +88,7 @@ function FilterButton({
   )
 }
 
-export function POSMenu({ onSelectProduct }: POSMenuProps) {
+export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
   const [productos, setProductos] = useState<Producto[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -149,9 +150,13 @@ export function POSMenu({ onSelectProduct }: POSMenuProps) {
                 Menu de polleria
               </h1>
             </div>
-            <p className="max-w-lg text-[11px] text-gray-500 sm:text-sm">
-              Selecciona un producto para agregarlo al pedido.
-            </p>
+
+            <div className="flex items-start justify-between gap-3 sm:items-end">
+              <p className="max-w-lg text-[11px] text-gray-500 sm:text-sm">
+                Selecciona un producto para agregarlo al pedido.
+              </p>
+              {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">

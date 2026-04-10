@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
+import { formatDateTime } from "../lib/datetime"
 import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
-import type { Cliente, EliminarPedidoAdminResult, Pedido } from "../types/database"
+import type {
+  Cliente,
+  EliminarPedidoAdminResult,
+  Pedido,
+  PedidoDetalle,
+} from "../types/database"
 
 type OrderWithClient = Pedido & {
   clientes: Pick<Cliente, "nombre" | "notas_entrega"> | null
+  pedido_detalles: Pick<PedidoDetalle, "producto_nombre" | "cantidad" | "variante_3_4">[] | null
 }
 
 type MonitorView = "active" | "history"
@@ -56,14 +63,13 @@ function getShortOrderId(orderId: string) {
   return `#${orderId.slice(0, 8).toUpperCase()}`
 }
 
-function formatDateTime(isoDateTime: Pedido["fecha_creacion"]) {
+function formatOrderDateTime(isoDateTime: Pedido["fecha_creacion"]) {
   if (!isoDateTime) {
     return "Sin fecha"
   }
 
-  return new Date(isoDateTime).toLocaleString("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
+  return formatDateTime(isoDateTime, {
+    fallback: "Sin fecha",
   })
 }
 
@@ -87,6 +93,46 @@ function formatOrderStatus(estado: Pedido["estado"]) {
   return estado
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function formatVariantLabel(variante: PedidoDetalle["variante_3_4"]) {
+  const sanitizedVariant = variante?.trim()
+
+  if (!sanitizedVariant) {
+    return null
+  }
+
+  if (sanitizedVariant === "3/4" || sanitizedVariant === "3-4") {
+    return "3/4"
+  }
+
+  return sanitizedVariant.length > 14
+    ? `${sanitizedVariant.slice(0, 14)}...`
+    : sanitizedVariant
+}
+
+function formatOrderPackageSummary(order: OrderWithClient) {
+  const details = order.pedido_detalles ?? []
+
+  if (details.length === 0) {
+    return "Sin productos"
+  }
+
+  const firstItem = details[0]
+  const variantLabel = formatVariantLabel(firstItem.variante_3_4)
+  const productName = firstItem.producto_nombre?.trim() || "Producto"
+  const quantity = Number.isFinite(firstItem.cantidad)
+    ? Math.max(1, firstItem.cantidad)
+    : 1
+
+  const firstItemSummary = `1 ${productName}${variantLabel ? ` (${variantLabel})` : ""} x${quantity}`
+  const extraProductsCount = details.length - 1
+
+  if (extraProductsCount <= 0) {
+    return firstItemSummary
+  }
+
+  return `${firstItemSummary} +${extraProductsCount} productos`
 }
 
 function getStatusAction(order: OrderWithClient) {
@@ -130,9 +176,12 @@ export function OrdersMonitor() {
 
       const { data, error } = await supabase
         .from("pedidos")
-        .select("*, clientes(nombre, notas_entrega)")
+        .select(
+          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4)",
+        )
         .neq("estado", "entregado")
         .order("fecha_creacion", { ascending: true })
+        .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
 
       if (error) {
         throw error
@@ -157,9 +206,12 @@ export function OrdersMonitor() {
 
       const { data, error } = await supabase
         .from("pedidos")
-        .select("*, clientes(nombre, notas_entrega)")
+        .select(
+          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4)",
+        )
         .in("estado", HISTORY_ORDER_STATUSES)
         .order("fecha_creacion", { ascending: false })
+        .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
 
       if (error) {
         throw error
@@ -418,6 +470,7 @@ export function OrdersMonitor() {
                 order.tipo_pedido === "domicilio"
                   ? order.clientes?.nombre ?? "Cliente sin nombre"
                   : "Mostrador"
+              const packageSummary = formatOrderPackageSummary(order)
               const deliveryNotes =
                 order.clientes?.notas_entrega?.trim() ||
                 "Sin direccion o referencias registradas"
@@ -443,16 +496,23 @@ export function OrdersMonitor() {
                   </h3>
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    {view === "history" ? (
-                      <div className="col-span-2 min-w-0">
-                        <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          Fecha
-                        </dt>
-                        <dd className="mt-0.5 truncate font-semibold text-slate-900">
-                          {formatDateTime(order.fecha_creacion)}
-                        </dd>
-                      </div>
-                    ) : null}
+                    <div className="col-span-2 min-w-0">
+                      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Fecha
+                      </dt>
+                      <dd className="mt-0.5 truncate font-semibold text-slate-900">
+                        {formatOrderDateTime(order.fecha_creacion)}
+                      </dd>
+                    </div>
+
+                    <div className="col-span-2 min-w-0">
+                      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Paquete
+                      </dt>
+                      <dd className="mt-0.5 overflow-hidden text-xs font-semibold leading-5 text-slate-700 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                        {packageSummary}
+                      </dd>
+                    </div>
 
                     <div className="min-w-0">
                       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">

@@ -27,6 +27,11 @@ export type PedidoTipo = "mostrador" | "domicilio" | (string & {});
 export type MetodoPago = "efectivo" | "transferencia" | (string & {});
 export type MedioSalida = "efectivo" | "transferencia" | (string & {});
 export type EstadoPago = "pendiente" | "pagado";
+export type ModoDescuentoInventario =
+  | "fijo"
+  | "manual"
+  | "fijo_por_pieza"
+  | (string & {});
 export interface Producto extends Record<string, unknown> {
   id: UUID;
   nombre: string;
@@ -37,6 +42,11 @@ export interface Producto extends Record<string, unknown> {
   clave_inventario: string | null;
   piezas_inventario: number | null;
   requiere_variante_3_4: boolean;
+  modo_descuento_inventario: ModoDescuentoInventario;
+  piezas_a_seleccionar: number | null;
+  piezas_permitidas: Json | null;
+  permite_repetir_piezas: boolean;
+  desglose_fijo: Json | null;
 }
 export interface ProductoInsert extends Record<string, unknown> {
   id?: UUID;
@@ -48,6 +58,11 @@ export interface ProductoInsert extends Record<string, unknown> {
   clave_inventario?: string | null;
   piezas_inventario?: number | null;
   requiere_variante_3_4?: boolean;
+  modo_descuento_inventario?: ModoDescuentoInventario;
+  piezas_a_seleccionar?: number | null;
+  piezas_permitidas?: Json | null;
+  permite_repetir_piezas?: boolean;
+  desglose_fijo?: Json | null;
 }
 export interface ProductoUpdate extends Record<string, unknown> {
   id?: UUID;
@@ -59,6 +74,11 @@ export interface ProductoUpdate extends Record<string, unknown> {
   clave_inventario?: string | null;
   piezas_inventario?: number | null;
   requiere_variante_3_4?: boolean;
+  modo_descuento_inventario?: ModoDescuentoInventario;
+  piezas_a_seleccionar?: number | null;
+  piezas_permitidas?: Json | null;
+  permite_repetir_piezas?: boolean;
+  desglose_fijo?: Json | null;
 }
 export interface Cliente extends Record<string, unknown> {
   id: UUID;
@@ -674,6 +694,11 @@ export interface Database {
           p_subcategoria?: string | null;
           p_piezas_inventario?: number | null;
           p_requiere_variante_3_4?: boolean | null;
+          p_modo_descuento_inventario?: string | null;
+          p_piezas_a_seleccionar?: number | null;
+          p_piezas_permitidas?: Json | null;
+          p_permite_repetir_piezas?: boolean | null;
+          p_desglose_fijo?: Json | null;
         };
         Returns: Producto;
       };

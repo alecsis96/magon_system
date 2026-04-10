@@ -53,6 +53,16 @@ type ProductoDetalle = {
   mermaOptions: string[]
 }
 
+type InventoryDiscountMode = "fijo" | "manual" | "fijo_por_pieza"
+
+type InventoryDiscountConfig = {
+  mode: InventoryDiscountMode
+  piezasASeleccionar: number | null
+  piezasPermitidas: InventoryPieceKey[]
+  permiteRepetirPiezas: boolean
+  desgloseFijo: PieceBreakdown | null
+}
+
 type CartItem = {
   lineId: string
   producto: Producto
@@ -81,48 +91,143 @@ const MERMA_TO_PIECE_MAP: Record<string, InventoryPieceKey> = {
   "Pechuga chica quemada": "pechugas_chicas",
 }
 
-const PRODUCTO_DETALLES: Record<string, ProductoDetalle> = {
-  "1_pollo": {
-    piezasInventario: 10,
-    desglose: "2 alas, 2 piernas, 2 muslos, 2 pechugas grandes y 2 pechugas chicas",
-    mermaOptions: MERMA_OPTIONS,
-  },
-  "3/4_pollo": {
-    piezasInventario: 7,
-    desglose: "1/2 pollo + ala + pechuga grande o 1/2 pollo + pierna + muslo",
-    mermaOptions: MERMA_OPTIONS,
-  },
-  "1/2_pollo": {
-    piezasInventario: 5,
-    desglose: null,
-    mermaOptions: MERMA_OPTIONS,
-  },
-  "1_PIEZA": {
-    piezasInventario: 1,
-    desglose: "Descuenta 1 pieza del inventario principal",
-    mermaOptions: MERMA_OPTIONS,
-  },
-  combo_papas: {
-    piezasInventario: 10,
-    desglose: null,
-    mermaOptions: MERMA_OPTIONS,
-  },
+const ALL_PIECE_KEYS = Object.keys(PIECE_LABELS) as InventoryPieceKey[]
+
+function isInventoryPieceKey(value: unknown): value is InventoryPieceKey {
+  return (
+    typeof value === "string" &&
+    (ALL_PIECE_KEYS as string[]).includes(value)
+  )
+}
+
+function parsePieceArray(value: unknown): InventoryPieceKey[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((piece) => isInventoryPieceKey(piece))
+}
+
+function parseBreakdown(value: unknown): PieceBreakdown | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null
+  }
+
+  const base = createEmptyPieceBreakdown()
+  let hasValue = false
+
+  for (const pieceKey of ALL_PIECE_KEYS) {
+    const rawCount = (value as Record<string, unknown>)[pieceKey]
+
+    if (rawCount === undefined || rawCount === null) {
+      continue
+    }
+
+    if (typeof rawCount !== "number" || !Number.isFinite(rawCount)) {
+      continue
+    }
+
+    const normalizedCount = Math.max(0, Math.trunc(rawCount))
+    base[pieceKey] = normalizedCount
+
+    if (normalizedCount > 0) {
+      hasValue = true
+    }
+  }
+
+  return hasValue ? base : null
+}
+
+function describeBreakdown(breakdown: PieceBreakdown) {
+  return ALL_PIECE_KEYS
+    .filter((pieceKey) => breakdown[pieceKey] > 0)
+    .map((pieceKey) => `${breakdown[pieceKey]} ${PIECE_LABELS[pieceKey]}`)
+    .join(", ")
+}
+
+function getInventoryDiscountConfig(producto: Producto): InventoryDiscountConfig {
+  const inventoryPieceCount = getInventoryPieceCount(producto) ?? 0
+  const modeRaw = producto.modo_descuento_inventario
+  let mode: InventoryDiscountMode = "fijo"
+
+  if (modeRaw === "manual") {
+    mode = "manual"
+  } else if (modeRaw === "fijo_por_pieza") {
+    mode = "fijo_por_pieza"
+  }
+  const parsedAllowedPieces = parsePieceArray(producto.piezas_permitidas)
+  const parsedBreakdown = parseBreakdown(producto.desglose_fijo)
+
+  if (mode === "manual") {
+    return {
+      mode,
+      piezasASeleccionar:
+        producto.piezas_a_seleccionar ??
+        (inventoryPieceCount > 0 ? inventoryPieceCount : 1),
+      piezasPermitidas:
+        parsedAllowedPieces.length > 0 ? parsedAllowedPieces : ALL_PIECE_KEYS,
+      permiteRepetirPiezas: producto.permite_repetir_piezas ?? true,
+      desgloseFijo: null,
+    }
+  }
+
+  if (mode === "fijo_por_pieza") {
+    const fallbackBreakdown = createEmptyPieceBreakdown()
+    fallbackBreakdown.pechugas_chicas = 1
+
+    return {
+      mode,
+      piezasASeleccionar: null,
+      piezasPermitidas: ALL_PIECE_KEYS,
+      permiteRepetirPiezas: true,
+      desgloseFijo: parsedBreakdown ?? fallbackBreakdown,
+    }
+  }
+
+  return {
+    mode: "fijo",
+    piezasASeleccionar: null,
+    piezasPermitidas: ALL_PIECE_KEYS,
+    permiteRepetirPiezas: true,
+    desgloseFijo: parsedBreakdown,
+  }
 }
 
 function getProductoDetalle(producto: Producto): ProductoDetalle {
-  const productKey = resolveInventoryProductKey(producto)
   const inventoryPieces = getInventoryPieceCount(producto) ?? 0
+  const productConfig = getInventoryDiscountConfig(producto)
+  const productKey = resolveInventoryProductKey(producto)
 
-  return (
-    (productKey ? PRODUCTO_DETALLES[productKey] : null) ?? {
-      piezasInventario: inventoryPieces,
-      desglose:
-        inventoryPieces > 0
-          ? `${inventoryPieces} pieza${inventoryPieces === 1 ? "" : "s"} descontadas del inventario principal`
-          : null,
-      mermaOptions: MERMA_OPTIONS,
+  let desglose: string | null = null
+
+  if (isThreeQuarterProduct(producto)) {
+    desglose = "1/2 pollo + ala + pechuga grande o 1/2 pollo + pierna + muslo"
+  } else if (productConfig.mode === "manual" && productConfig.piezasASeleccionar) {
+    desglose = `Seleccion manual: ${productConfig.piezasASeleccionar} pieza${productConfig.piezasASeleccionar === 1 ? "" : "s"}`
+  } else if (productConfig.mode === "fijo_por_pieza" && productConfig.desgloseFijo) {
+    desglose = `Fijo por pieza: ${describeBreakdown(productConfig.desgloseFijo)}`
+  } else if (productConfig.desgloseFijo) {
+    desglose = describeBreakdown(productConfig.desgloseFijo)
+  } else {
+    const legacyBreakdown = getProductBreakdown(producto)
+    const hasLegacyBreakdown = Object.values(legacyBreakdown).some(
+      (value) => value > 0,
+    )
+
+    if (hasLegacyBreakdown) {
+      desglose = describeBreakdown(legacyBreakdown)
+    } else if (inventoryPieces > 0) {
+      desglose = `${inventoryPieces} pieza${inventoryPieces === 1 ? "" : "s"} descontadas del inventario principal`
+    } else if (productKey === "3/4_pollo") {
+      desglose = "1/2 pollo + ala + pechuga grande o 1/2 pollo + pierna + muslo"
     }
-  )
+  }
+
+  return {
+    piezasInventario: inventoryPieces,
+    desglose,
+    mermaOptions: MERMA_OPTIONS,
+  }
 }
 
 function isThreeQuarterProduct(producto: Producto) {
@@ -133,13 +238,13 @@ function isThreeQuarterProduct(producto: Producto) {
 }
 
 function getManualPieceRequirement(producto: Producto) {
-  const inventoryPieceCount = getInventoryPieceCount(producto) ?? 0
+  const config = getInventoryDiscountConfig(producto)
 
-  if (inventoryPieceCount === 1 || inventoryPieceCount === 2) {
-    return inventoryPieceCount
+  if (config.mode !== "manual") {
+    return null
   }
 
-  return null
+  return config.piezasASeleccionar
 }
 
 function requiresManualPieceSelection(producto: Producto) {
@@ -164,6 +269,24 @@ function getManualSelectionLabel(selectedPieces: InventoryPieceKey[]) {
     })
 
   return labels.join(", ")
+}
+
+function canAddManualPiece(
+  item: CartItem,
+  pieceType: InventoryPieceKey,
+  manualPieceRequirement: number,
+) {
+  if (item.manualPieceSelection.length >= manualPieceRequirement) {
+    return false
+  }
+
+  const config = getInventoryDiscountConfig(item.producto)
+
+  if (!config.permiteRepetirPiezas) {
+    return !item.manualPieceSelection.includes(pieceType)
+  }
+
+  return true
 }
 
 function createEmptyPieceBreakdown(): PieceBreakdown {
@@ -194,6 +317,16 @@ function getCartItemBreakdown(item: CartItem) {
       breakdown[pieceType] += 1
       return breakdown
     }, createEmptyPieceBreakdown())
+  }
+
+  const config = getInventoryDiscountConfig(item.producto)
+
+  if (config.mode === "fijo_por_pieza" && config.desgloseFijo) {
+    return config.desgloseFijo
+  }
+
+  if (config.mode === "fijo" && config.desgloseFijo) {
+    return config.desgloseFijo
   }
 
   return getProductBreakdown(item.producto)
@@ -588,7 +721,7 @@ function App() {
     )
   }
 
-  function handleManualPieceSelectionChange(
+function handleManualPieceSelectionChange(
     lineId: string,
     pieceType: InventoryPieceKey,
     mode: "add" | "remove",
@@ -600,13 +733,18 @@ function App() {
               ...item,
               manualPieceSelection: (() => {
                 const requiredPieces = getManualPieceRequirement(item.producto)
+                const productConfig = getInventoryDiscountConfig(item.producto)
 
                 if (!requiredPieces) {
                   return item.manualPieceSelection
                 }
 
+                if (!productConfig.piezasPermitidas.includes(pieceType)) {
+                  return item.manualPieceSelection
+                }
+
                 if (mode === "add") {
-                  if (item.manualPieceSelection.length >= requiredPieces) {
+                  if (!canAddManualPiece(item, pieceType, requiredPieces)) {
                     return item.manualPieceSelection
                   }
 
@@ -701,9 +839,26 @@ function App() {
       cart.some(
         (item) => {
           const requiredPieces = getManualPieceRequirement(item.producto)
+          const config = getInventoryDiscountConfig(item.producto)
 
           if (!requiredPieces) {
             return false
+          }
+
+          const hasInvalidPiece = item.manualPieceSelection.some(
+            (piece) => !config.piezasPermitidas.includes(piece),
+          )
+
+          if (hasInvalidPiece) {
+            return true
+          }
+
+          if (!config.permiteRepetirPiezas) {
+            const selectedUniquePieces = new Set(item.manualPieceSelection)
+
+            if (selectedUniquePieces.size !== item.manualPieceSelection.length) {
+              return true
+            }
           }
 
           return item.manualPieceSelection.length !== requiredPieces
@@ -940,9 +1095,26 @@ function App() {
   }, 0)
   const hasPendingManualPieceSelection = cart.some((item) => {
     const requiredPieces = getManualPieceRequirement(item.producto)
+    const config = getInventoryDiscountConfig(item.producto)
 
     if (!requiredPieces) {
       return false
+    }
+
+    if (
+      item.manualPieceSelection.some(
+        (piece) => !config.piezasPermitidas.includes(piece),
+      )
+    ) {
+      return true
+    }
+
+    if (!config.permiteRepetirPiezas) {
+      const selectedUniquePieces = new Set(item.manualPieceSelection)
+
+      if (selectedUniquePieces.size !== item.manualPieceSelection.length) {
+        return true
+      }
     }
 
     return item.manualPieceSelection.length !== requiredPieces
@@ -1247,6 +1419,7 @@ function App() {
                           const manualPieceRequirement = getManualPieceRequirement(
                             item.producto,
                           )
+                          const manualConfig = getInventoryDiscountConfig(item.producto)
                           const showManualPieceSelector =
                             manualPieceRequirement !== null
                           const selectedCompositionLabel = getManualSelectionLabel(
@@ -1350,17 +1523,17 @@ function App() {
                                       {item.manualPieceSelection.length === 1 ? "" : "s"}
                                     </p>
                                     <div className="mt-3 grid gap-2">
-                                      {(Object.keys(
-                                        PIECE_LABELS,
-                                      ) as InventoryPieceKey[]).map((pieceKey) => {
+                                      {manualConfig.piezasPermitidas.map((pieceKey) => {
                                         const selectedCount =
                                           item.manualPieceSelection.filter(
                                             (selectedPiece) =>
                                               selectedPiece === pieceKey,
                                           ).length
-                                        const canAdd =
-                                          item.manualPieceSelection.length <
-                                          manualPieceRequirement
+                                        const canAdd = canAddManualPiece(
+                                          item,
+                                          pieceKey,
+                                          manualPieceRequirement,
+                                        )
                                         const canRemove = selectedCount > 0
 
                                         return (

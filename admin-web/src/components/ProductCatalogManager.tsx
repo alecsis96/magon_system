@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
-import { getLegacyInventoryPieces } from "../constants/inventory"
+import {
+  getLegacyInventoryPieces,
+  PIECE_LABELS,
+  type InventoryPieceKey,
+} from "../constants/inventory"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { supabase } from "../lib/supabase"
 import type { Producto, ProductoCategoria, ProductoSubcategoria } from "../types/database"
+
+type InventoryDiscountMode = "fijo" | "manual" | "fijo_por_pieza"
 
 type ProductFormState = {
   nombre: string
@@ -13,7 +19,15 @@ type ProductFormState = {
   subcategoria: ProductoSubcategoria | ""
   piezasInventario: number | null
   requiereVariante34: boolean
+  modoDescuentoInventario: InventoryDiscountMode
+  piezasASeleccionar: string
+  piezasPermitidas: InventoryPieceKey[]
+  permiteRepetirPiezas: boolean
+  piezaFija: InventoryPieceKey
+  cantidadPiezaFija: string
 }
+
+const ALL_PIECES = Object.keys(PIECE_LABELS) as InventoryPieceKey[]
 
 const CATEGORY_OPTIONS: Array<{ value: ProductoCategoria; label: string }> = [
   { value: "Clasico", label: "Pollos" },
@@ -41,6 +55,82 @@ const EMPTY_FORM: ProductFormState = {
   subcategoria: "pollo",
   piezasInventario: null,
   requiereVariante34: false,
+  modoDescuentoInventario: "fijo",
+  piezasASeleccionar: "",
+  piezasPermitidas: [...ALL_PIECES],
+  permiteRepetirPiezas: true,
+  piezaFija: "pechugas_chicas",
+  cantidadPiezaFija: "1",
+}
+
+function isInventoryPieceKey(value: unknown): value is InventoryPieceKey {
+  return typeof value === "string" && (ALL_PIECES as string[]).includes(value)
+}
+
+function parseAllowedPieces(value: unknown): InventoryPieceKey[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((piece) => isInventoryPieceKey(piece))
+}
+
+function parseFixedBreakdown(value: unknown): Record<InventoryPieceKey, number> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null
+  }
+
+  const result = {
+    alas: 0,
+    piernas: 0,
+    muslos: 0,
+    pechugas_grandes: 0,
+    pechugas_chicas: 0,
+  }
+
+  let hasAnyPiece = false
+
+  for (const piece of ALL_PIECES) {
+    const rawValue = (value as Record<string, unknown>)[piece]
+
+    if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
+      continue
+    }
+
+    const normalizedValue = Math.max(0, Math.trunc(rawValue))
+    result[piece] = normalizedValue
+
+    if (normalizedValue > 0) {
+      hasAnyPiece = true
+    }
+  }
+
+  return hasAnyPiece ? result : null
+}
+
+function getFirstFixedPiece(
+  breakdown: Record<InventoryPieceKey, number> | null,
+): { piece: InventoryPieceKey; quantity: number } {
+  if (!breakdown) {
+    return { piece: "pechugas_chicas", quantity: 1 }
+  }
+
+  const selectedPiece = ALL_PIECES.find((piece) => breakdown[piece] > 0)
+
+  if (!selectedPiece) {
+    return { piece: "pechugas_chicas", quantity: 1 }
+  }
+
+  return {
+    piece: selectedPiece,
+    quantity: breakdown[selectedPiece],
+  }
+}
+
+function getInventoryModeLabel(mode: InventoryDiscountMode) {
+  if (mode === "manual") return "Manual"
+  if (mode === "fijo_por_pieza") return "Fijo por pieza"
+  return "Fijo"
 }
 
 function getCategoryLabel(categoria: string | null) {
@@ -85,6 +175,16 @@ function mapProductToForm(producto: Producto): ProductFormState {
     validSubcategories[0]?.value ??
     ""
 
+  const modoDescuentoInventario: InventoryDiscountMode =
+    producto.modo_descuento_inventario === "manual"
+      ? "manual"
+      : producto.modo_descuento_inventario === "fijo_por_pieza"
+        ? "fijo_por_pieza"
+        : "fijo"
+  const parsedAllowedPieces = parseAllowedPieces(producto.piezas_permitidas)
+  const parsedFixedBreakdown = parseFixedBreakdown(producto.desglose_fijo)
+  const fixedConfig = getFirstFixedPiece(parsedFixedBreakdown)
+
   return {
     nombre: producto.nombre,
     descripcion: producto.descripcion ?? "",
@@ -94,6 +194,28 @@ function mapProductToForm(producto: Producto): ProductFormState {
     piezasInventario:
       producto.piezas_inventario ?? getLegacyInventoryPieces(producto.clave_inventario),
     requiereVariante34: producto.requiere_variante_3_4 ?? false,
+    modoDescuentoInventario,
+    piezasASeleccionar:
+      modoDescuentoInventario === "manual"
+        ? String(
+            producto.piezas_a_seleccionar ??
+              (producto.piezas_inventario && producto.piezas_inventario > 0
+                ? producto.piezas_inventario
+                : 1),
+          )
+        : "",
+    piezasPermitidas:
+      modoDescuentoInventario === "manual"
+        ? parsedAllowedPieces.length > 0
+          ? parsedAllowedPieces
+          : [...ALL_PIECES]
+        : [...ALL_PIECES],
+    permiteRepetirPiezas: producto.permite_repetir_piezas ?? true,
+    piezaFija: fixedConfig.piece,
+    cantidadPiezaFija:
+      modoDescuentoInventario === "fijo_por_pieza"
+        ? String(fixedConfig.quantity)
+        : "1",
   }
 }
 
@@ -163,7 +285,42 @@ export function ProductCatalogManager() {
         nextForm.requiereVariante34 = false
       }
 
+      if (field === "modoDescuentoInventario") {
+        if (value === "manual") {
+          nextForm.piezasASeleccionar =
+            nextForm.piezasASeleccionar ||
+            String(nextForm.piezasInventario && nextForm.piezasInventario > 0 ? nextForm.piezasInventario : 1)
+          nextForm.piezasPermitidas = nextForm.piezasPermitidas.length > 0
+            ? nextForm.piezasPermitidas
+            : [...ALL_PIECES]
+        }
+
+        if (value === "fijo_por_pieza") {
+          nextForm.cantidadPiezaFija = nextForm.cantidadPiezaFija || "1"
+        }
+      }
+
       return nextForm
+    })
+  }
+
+  function toggleAllowedPiece(piece: InventoryPieceKey) {
+    setForm((currentForm) => {
+      const alreadySelected = currentForm.piezasPermitidas.includes(piece)
+
+      if (alreadySelected) {
+        return {
+          ...currentForm,
+          piezasPermitidas: currentForm.piezasPermitidas.filter(
+            (currentPiece) => currentPiece !== piece,
+          ),
+        }
+      }
+
+      return {
+        ...currentForm,
+        piezasPermitidas: [...currentForm.piezasPermitidas, piece],
+      }
     })
   }
 
@@ -217,6 +374,34 @@ export function ProductCatalogManager() {
         ? form.piezasInventario
         : null
     const requiereVariante34 = piezasInventario === 7 ? form.requiereVariante34 : false
+    const modoDescuentoInventario = form.modoDescuentoInventario
+    const piezasASeleccionar =
+      modoDescuentoInventario === "manual"
+        ? Number.parseInt(form.piezasASeleccionar.trim(), 10)
+        : null
+    const cantidadPiezaFija =
+      modoDescuentoInventario === "fijo_por_pieza"
+        ? Number.parseInt(form.cantidadPiezaFija.trim(), 10)
+        : null
+    const piezasPermitidas =
+      modoDescuentoInventario === "manual"
+        ? form.piezasPermitidas
+        : null
+    const permiteRepetirPiezas =
+      modoDescuentoInventario === "manual" ? form.permiteRepetirPiezas : true
+    const desgloseFijo =
+      modoDescuentoInventario === "fijo_por_pieza"
+        ? {
+            alas: 0,
+            piernas: 0,
+            muslos: 0,
+            pechugas_grandes: 0,
+            pechugas_chicas: 0,
+            [form.piezaFija]: Number.isFinite(cantidadPiezaFija) && cantidadPiezaFija && cantidadPiezaFija > 0
+              ? cantidadPiezaFija
+              : 1,
+          }
+        : null
 
     if (!nombre) {
       toast.error("Ingresa el nombre del producto")
@@ -236,6 +421,32 @@ export function ProductCatalogManager() {
       return
     }
 
+    if (modoDescuentoInventario === "manual") {
+      if (!Number.isInteger(piezasASeleccionar) || (piezasASeleccionar ?? 0) < 1) {
+        toast.error("En modo manual define cuantas piezas debe seleccionar el operador")
+        return
+      }
+
+      const piezasASeleccionarManual = piezasASeleccionar as number
+
+      if (!piezasPermitidas || piezasPermitidas.length === 0) {
+        toast.error("En modo manual debes permitir al menos una pieza")
+        return
+      }
+
+      if (!permiteRepetirPiezas && piezasASeleccionarManual > piezasPermitidas.length) {
+        toast.error("Sin repeticion, la cantidad a seleccionar no puede superar las piezas permitidas")
+        return
+      }
+    }
+
+    if (modoDescuentoInventario === "fijo_por_pieza") {
+      if (!Number.isInteger(cantidadPiezaFija) || (cantidadPiezaFija ?? 0) < 1) {
+        toast.error("La cantidad de pieza fija debe ser un entero mayor o igual a 1")
+        return
+      }
+    }
+
     try {
       setIsSaving(true)
       const { error } = await (supabase as typeof supabase & {
@@ -250,6 +461,11 @@ export function ProductCatalogManager() {
             p_subcategoria?: string | null
             p_piezas_inventario?: number | null
             p_requiere_variante_3_4?: boolean | null
+            p_modo_descuento_inventario?: string | null
+            p_piezas_a_seleccionar?: number | null
+            p_piezas_permitidas?: InventoryPieceKey[] | null
+            p_permite_repetir_piezas?: boolean | null
+            p_desglose_fijo?: Record<InventoryPieceKey, number> | null
           },
         ) => Promise<{ data: Producto | null; error: Error | null }>
       }).rpc("guardar_producto_admin", {
@@ -261,6 +477,12 @@ export function ProductCatalogManager() {
         p_subcategoria: form.subcategoria || null,
         p_piezas_inventario: piezasInventario,
         p_requiere_variante_3_4: requiereVariante34,
+        p_modo_descuento_inventario: modoDescuentoInventario,
+        p_piezas_a_seleccionar:
+          modoDescuentoInventario === "manual" ? piezasASeleccionar : null,
+        p_piezas_permitidas: piezasPermitidas,
+        p_permite_repetir_piezas: permiteRepetirPiezas,
+        p_desglose_fijo: desgloseFijo,
       })
 
       if (error) {
@@ -413,6 +635,140 @@ export function ProductCatalogManager() {
             </div>
 
             <div>
+              <label htmlFor="inventory-discount-mode" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Modo descuento inventario
+              </label>
+              <select
+                id="inventory-discount-mode"
+                value={form.modoDescuentoInventario}
+                onChange={(event) =>
+                  handleFormChange(
+                    "modoDescuentoInventario",
+                    event.target.value as InventoryDiscountMode,
+                  )
+                }
+                disabled={!canManageProducts}
+                className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-5 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+              >
+                <option value="fijo">Fijo (desglose por defecto)</option>
+                <option value="manual">Manual (seleccion en caja)</option>
+                <option value="fijo_por_pieza">Fijo por pieza</option>
+              </select>
+            </div>
+
+            {form.modoDescuentoInventario === "manual" ? (
+              <div className="space-y-3 rounded-3xl border border-sky-200 bg-sky-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
+                  Configuracion manual
+                </p>
+
+                <div>
+                  <label htmlFor="manual-pieces-count" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Piezas a seleccionar en caja
+                  </label>
+                  <input
+                    id="manual-pieces-count"
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={form.piezasASeleccionar}
+                    onChange={(event) => handleFormChange("piezasASeleccionar", event.target.value)}
+                    disabled={!canManageProducts}
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                  />
+                </div>
+
+                <div>
+                  <p className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Piezas permitidas
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {ALL_PIECES.map((pieceKey) => {
+                      const isSelected = form.piezasPermitidas.includes(pieceKey)
+
+                      return (
+                        <button
+                          key={pieceKey}
+                          type="button"
+                          onClick={() => toggleAllowedPiece(pieceKey)}
+                          disabled={!canManageProducts}
+                          className={`rounded-2xl border px-3 py-2 text-left text-xs font-bold transition ${
+                            isSelected
+                              ? "border-sky-500 bg-sky-600 text-white"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          {PIECE_LABELS[pieceKey]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Permitir repetir piezas</p>
+                    <p className="mt-1 text-xs text-slate-500">Si esta activo, se puede elegir la misma pieza mas de una vez.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={form.permiteRepetirPiezas}
+                    onChange={(event) => handleFormChange("permiteRepetirPiezas", event.target.checked)}
+                    disabled={!canManageProducts}
+                    className="h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-300"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {form.modoDescuentoInventario === "fijo_por_pieza" ? (
+              <div className="space-y-3 rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
+                  Configuracion fija por pieza
+                </p>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="fixed-piece-key" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Pieza fija</label>
+                    <select
+                      id="fixed-piece-key"
+                      value={form.piezaFija}
+                      onChange={(event) => handleFormChange("piezaFija", event.target.value as InventoryPieceKey)}
+                      disabled={!canManageProducts}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                    >
+                      {ALL_PIECES.map((pieceKey) => (
+                        <option key={pieceKey} value={pieceKey}>{PIECE_LABELS[pieceKey]}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="fixed-piece-quantity" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Cantidad por unidad</label>
+                    <input
+                      id="fixed-piece-quantity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      value={form.cantidadPiezaFija}
+                      onChange={(event) => handleFormChange("cantidadPiezaFija", event.target.value)}
+                      disabled={!canManageProducts}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {form.modoDescuentoInventario === "fijo" ? (
+              <div className="rounded-3xl border border-slate-200 bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                Se mantiene el desglose fijo por defecto (compatibilidad actual).
+              </div>
+            ) : null}
+
+            <div>
               <label htmlFor="inventory-pieces" className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                 Piezas a descontar del inventario
               </label>
@@ -495,6 +851,11 @@ export function ProductCatalogManager() {
                             Variante 3/4
                           </span>
                         ) : null}
+                        <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-sky-700">
+                          {getInventoryModeLabel(
+                            (producto.modo_descuento_inventario as InventoryDiscountMode) ?? "fijo",
+                          )}
+                        </span>
                       </div>
 
                       <h4 className="mt-3 text-lg font-black text-slate-900">{producto.nombre}</h4>

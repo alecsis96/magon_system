@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
+import {
+  formatDateKey,
+  formatMonthKey,
+  getTodayDateKey,
+  toDateKey,
+} from "../lib/datetime"
 import { supabase } from "../lib/supabase"
 import type {
   CierreCaja,
@@ -95,9 +101,7 @@ function toMoneyNumber(value: string) {
 }
 
 function getTodayLocalISODate() {
-  const now = new Date()
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-  return localDate.toISOString().slice(0, 10)
+  return getTodayDateKey()
 }
 
 function toLocalDateKey(value: string | null) {
@@ -105,18 +109,11 @@ function toLocalDateKey(value: string | null) {
     return ""
   }
 
-  const date = new Date(value)
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-  return localDate.toISOString().slice(0, 10)
+  return toDateKey(value)
 }
 
 function formatDateLabel(value: string) {
-  const [year, month, day] = value.split("-").map(Number)
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(year, (month ?? 1) - 1, day ?? 1))
+  return formatDateKey(value)
 }
 
 function formatDateRangeLabel(start: string, end: string) {
@@ -126,11 +123,7 @@ function formatDateRangeLabel(start: string, end: string) {
 }
 
 function getMonthLabel(value: string) {
-  const [year, month] = value.split("-").map(Number)
-  return new Intl.DateTimeFormat("es-MX", {
-    month: "long",
-    year: "numeric",
-  }).format(new Date(year, (month ?? 1) - 1, 1))
+  return formatMonthKey(value)
 }
 
 function getISOWeekBounds(value: string) {
@@ -235,7 +228,8 @@ export function AccountingDashboard() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [egresos, setEgresos] = useState<Egreso[]>([])
   const [plantillas, setPlantillas] = useState<EgresoPlantilla[]>([])
-  const [cierreHoy, setCierreHoy] = useState<CierreCaja | null>(null)
+  const [selectedDate, setSelectedDate] = useState(getTodayLocalISODate())
+  const [cierreSeleccionado, setCierreSeleccionado] = useState<CierreCaja | null>(null)
   const [periodMode, setPeriodMode] = useState<PeriodMode>("dia")
   const [showCanceled, setShowCanceled] = useState(false)
   const [activeTab, setActiveTab] = useState<DashboardTab>("hoy")
@@ -268,11 +262,19 @@ export function AccountingDashboard() {
   )
 
   const todayKey = getTodayLocalISODate()
+  const yesterdayKey = useMemo(() => {
+    const [year, month, day] = todayKey.split("-").map(Number)
+    const date = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1))
+    date.setUTCDate(date.getUTCDate() - 1)
+    return date.toISOString().slice(0, 10)
+  }, [todayKey])
   const dataStartDate = useMemo(() => {
     const now = new Date()
-    const start = new Date(now.getFullYear(), now.getMonth() - 3, 1)
-    return start.toISOString().slice(0, 10)
-  }, [])
+    const threeMonthsStart = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+      .toISOString()
+      .slice(0, 10)
+    return selectedDate < threeMonthsStart ? selectedDate : threeMonthsStart
+  }, [selectedDate])
   const dataEndDate = useMemo(() => {
     const now = new Date()
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -300,7 +302,7 @@ export function AccountingDashboard() {
         setPedidos([])
         setEgresos([])
         setPlantillas([])
-        setCierreHoy(null)
+        setCierreSeleccionado(null)
         return
       }
 
@@ -332,7 +334,7 @@ export function AccountingDashboard() {
         supabase
           .from("cierres_caja")
           .select("*")
-          .eq("fecha", todayKey)
+          .eq("fecha", selectedDate)
           .maybeSingle(),
       ])
 
@@ -354,7 +356,7 @@ export function AccountingDashboard() {
       setPedidos((pedidosData ?? []) as Pedido[])
       setEgresos((egresosData ?? []) as Egreso[])
       setPlantillas((plantillasData ?? []) as EgresoPlantilla[])
-      setCierreHoy(loadedCierre)
+      setCierreSeleccionado(loadedCierre)
 
       if (loadedCierre) {
         const normalizedCounts = normalizeDenominationCounts(
@@ -398,7 +400,7 @@ export function AccountingDashboard() {
     } finally {
       setIsLoading(false)
     }
-  }, [dataEndDate, dataStartDate, loadAdminState, todayKey])
+  }, [dataEndDate, dataStartDate, loadAdminState, selectedDate])
 
   useEffect(() => {
     void loadAccountingData()
@@ -418,26 +420,26 @@ export function AccountingDashboard() {
     [egresos],
   )
 
-  const pedidosHoy = useMemo(
-    () => pedidos.filter((pedido) => toLocalDateKey(pedido.fecha_creacion) === todayKey),
-    [pedidos, todayKey],
+  const pedidosSelectedDate = useMemo(
+    () => pedidos.filter((pedido) => toLocalDateKey(pedido.fecha_creacion) === selectedDate),
+    [pedidos, selectedDate],
   )
 
-  const egresosHoyNoCancelados = useMemo(
-    () => egresosNoCancelados.filter((egreso) => egreso.fecha === todayKey),
-    [egresosNoCancelados, todayKey],
+  const egresosSelectedDateNoCancelados = useMemo(
+    () => egresosNoCancelados.filter((egreso) => egreso.fecha === selectedDate),
+    [egresosNoCancelados, selectedDate],
   )
 
-  const kpisHoy = useMemo(() => {
-    const cobrado = pedidosHoy.reduce(
+  const kpisSelectedDate = useMemo(() => {
+    const cobrado = pedidosSelectedDate.reduce(
       (sum, pedido) => sum + (isEffectivelyPaid(pedido) ? pedido.total : 0),
       0,
     )
-    const pendiente = pedidosHoy.reduce(
+    const pendiente = pedidosSelectedDate.reduce(
       (sum, pedido) => sum + (!isEffectivelyPaid(pedido) ? pedido.total : 0),
       0,
     )
-    const egresosTotal = egresosHoyNoCancelados.reduce(
+    const egresosTotal = egresosSelectedDateNoCancelados.reduce(
       (sum, egreso) => sum + egreso.monto,
       0,
     )
@@ -447,11 +449,11 @@ export function AccountingDashboard() {
       egresos: egresosTotal,
       neto: cobrado - egresosTotal,
     }
-  }, [egresosHoyNoCancelados, pedidosHoy])
+  }, [egresosSelectedDateNoCancelados, pedidosSelectedDate])
 
-  const efectivoCobradoHoy = useMemo(
+  const efectivoCobradoSelectedDate = useMemo(
     () =>
-      pedidosHoy.reduce(
+      pedidosSelectedDate.reduce(
         (sum, pedido) =>
           sum +
           (isEffectivelyPaid(pedido) && pedido.metodo_pago === "efectivo"
@@ -459,12 +461,12 @@ export function AccountingDashboard() {
             : 0),
         0,
       ),
-    [pedidosHoy],
+    [pedidosSelectedDate],
   )
 
-  const transferenciaCobradaHoy = useMemo(
+  const transferenciaCobradaSelectedDate = useMemo(
     () =>
-      pedidosHoy.reduce(
+      pedidosSelectedDate.reduce(
         (sum, pedido) =>
           sum +
           (isEffectivelyPaid(pedido) &&
@@ -473,27 +475,27 @@ export function AccountingDashboard() {
             : 0),
         0,
       ),
-    [pedidosHoy],
+    [pedidosSelectedDate],
   )
 
-  const egresosEfectivoHoy = useMemo(
+  const egresosEfectivoSelectedDate = useMemo(
     () =>
-      egresosHoyNoCancelados.reduce(
+      egresosSelectedDateNoCancelados.reduce(
         (sum, egreso) =>
           sum + (egreso.medio_salida === "efectivo" ? egreso.monto : 0),
         0,
       ),
-    [egresosHoyNoCancelados],
+    [egresosSelectedDateNoCancelados],
   )
 
-  const egresosTransferenciaHoy = useMemo(
+  const egresosTransferenciaSelectedDate = useMemo(
     () =>
-      egresosHoyNoCancelados.reduce(
+      egresosSelectedDateNoCancelados.reduce(
         (sum, egreso) =>
           sum + (egreso.medio_salida === "transferencia" ? egreso.monto : 0),
         0,
       ),
-    [egresosHoyNoCancelados],
+    [egresosSelectedDateNoCancelados],
   )
 
   const countedFromDenominations = useMemo(
@@ -514,8 +516,8 @@ export function AccountingDashboard() {
   const expectedTotal = useMemo(() => {
     const fondo = Number(fondoInicial)
     const initial = Number.isFinite(fondo) ? fondo : 0
-    return initial + efectivoCobradoHoy - egresosEfectivoHoy
-  }, [efectivoCobradoHoy, egresosEfectivoHoy, fondoInicial])
+    return initial + efectivoCobradoSelectedDate - egresosEfectivoSelectedDate
+  }, [efectivoCobradoSelectedDate, egresosEfectivoSelectedDate, fondoInicial])
 
   const diferenciaArqueo = countedTotal - expectedTotal
 
@@ -924,7 +926,7 @@ export function AccountingDashboard() {
       } = await supabase.auth.getUser()
 
       const payload: CierreCajaInsert = {
-        fecha: todayKey,
+        fecha: selectedDate,
         fondo_inicial: fondo,
         conteo_denominaciones: {
           ...denominationCounts,
@@ -946,7 +948,9 @@ export function AccountingDashboard() {
         throw error
       }
 
-      toast.success(cierreHoy ? "Cierre actualizado" : "Cierre guardado")
+      toast.success(
+        cierreSeleccionado ? "Cierre actualizado" : "Cierre guardado",
+      )
       await loadAccountingData()
     } catch (error) {
       console.error("Error al guardar cierre de caja:", error)
@@ -1024,6 +1028,52 @@ export function AccountingDashboard() {
         </button>
       </div>
 
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Fecha de corte
+        </p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedDate(todayKey)}
+              className={`rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] transition ${
+                selectedDate === todayKey
+                  ? "bg-slate-900 text-white"
+                  : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Hoy
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(yesterdayKey)}
+              className={`rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] transition ${
+                selectedDate === yesterdayKey
+                  ? "bg-slate-900 text-white"
+                  : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Ayer
+            </button>
+          </div>
+
+          <input
+            type="date"
+            value={selectedDate}
+            max={todayKey}
+            onChange={(event) => {
+              const value = event.target.value
+              if (!value) {
+                return
+              }
+              setSelectedDate(value > todayKey ? todayKey : value)
+            }}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 sm:w-auto"
+          />
+        </div>
+      </div>
+
       <div className="mt-4">
         <div className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:thin]">
           <div className="flex min-w-max snap-x snap-mandatory gap-2">
@@ -1048,7 +1098,7 @@ export function AccountingDashboard() {
       {activeTab === "hoy" ? (
         <div className="mt-4 rounded-3xl bg-slate-50 p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-            Resumen de hoy
+            Resumen del dia seleccionado
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             <article className="rounded-2xl bg-white p-3 shadow-sm">
@@ -1056,7 +1106,7 @@ export function AccountingDashboard() {
                 Cobrado
               </p>
               <p className="mt-1 text-lg font-black text-emerald-600">
-                {currencyFormatter.format(kpisHoy.cobrado)}
+                {currencyFormatter.format(kpisSelectedDate.cobrado)}
               </p>
             </article>
             <article className="rounded-2xl bg-white p-3 shadow-sm">
@@ -1064,7 +1114,7 @@ export function AccountingDashboard() {
                 Pendiente
               </p>
               <p className="mt-1 text-lg font-black text-amber-600">
-                {currencyFormatter.format(kpisHoy.pendiente)}
+                {currencyFormatter.format(kpisSelectedDate.pendiente)}
               </p>
             </article>
             <article className="rounded-2xl bg-white p-3 shadow-sm">
@@ -1072,7 +1122,7 @@ export function AccountingDashboard() {
                 Egresos
               </p>
               <p className="mt-1 text-lg font-black text-rose-600">
-                {currencyFormatter.format(kpisHoy.egresos)}
+                {currencyFormatter.format(kpisSelectedDate.egresos)}
               </p>
             </article>
             <article className="rounded-2xl bg-slate-900 p-3 shadow-sm">
@@ -1080,7 +1130,7 @@ export function AccountingDashboard() {
                 Neto
               </p>
               <p className="mt-1 text-lg font-black text-white">
-                {currencyFormatter.format(kpisHoy.neto)}
+                {currencyFormatter.format(kpisSelectedDate.neto)}
               </p>
             </article>
             <article className="rounded-2xl bg-white p-3 shadow-sm">
@@ -1088,7 +1138,7 @@ export function AccountingDashboard() {
                 Cobrado efectivo
               </p>
               <p className="mt-1 text-lg font-black text-emerald-600">
-                {currencyFormatter.format(efectivoCobradoHoy)}
+                {currencyFormatter.format(efectivoCobradoSelectedDate)}
               </p>
             </article>
             <article className="rounded-2xl bg-white p-3 shadow-sm">
@@ -1096,7 +1146,7 @@ export function AccountingDashboard() {
                 Cobrado transferencia
               </p>
               <p className="mt-1 text-lg font-black text-sky-600">
-                {currencyFormatter.format(transferenciaCobradaHoy)}
+                {currencyFormatter.format(transferenciaCobradaSelectedDate)}
               </p>
             </article>
           </div>
@@ -1390,9 +1440,25 @@ export function AccountingDashboard() {
 
       {activeTab === "arqueo" ? (
         <section className="mt-4 rounded-3xl bg-slate-50 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-            Arqueo de caja
-          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+              Arqueo de caja
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
+                {formatDateLabel(selectedDate)}
+              </span>
+              <span
+                className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ${
+                  cierreSeleccionado
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {cierreSeleccionado ? "Cerrado" : "Sin cierre"}
+              </span>
+            </div>
+          </div>
 
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <article className="rounded-2xl bg-white p-3 shadow-sm">
@@ -1532,21 +1598,21 @@ export function AccountingDashboard() {
 
             <div className="mt-3 space-y-2 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Efectivo cobrado hoy</span>
+                <span className="text-slate-500">Efectivo cobrado del dia</span>
                 <span className="font-black text-emerald-600">
-                  {currencyFormatter.format(efectivoCobradoHoy)}
+                  {currencyFormatter.format(efectivoCobradoSelectedDate)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Egresos efectivo hoy</span>
+                <span className="text-slate-500">Egresos efectivo del dia</span>
                 <span className="font-black text-rose-600">
-                  {currencyFormatter.format(egresosEfectivoHoy)}
+                  {currencyFormatter.format(egresosEfectivoSelectedDate)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Egresos transferencia hoy</span>
+                <span className="text-slate-500">Egresos transferencia del dia</span>
                 <span className="font-black text-sky-600">
-                  {currencyFormatter.format(egresosTransferenciaHoy)}
+                  {currencyFormatter.format(egresosTransferenciaSelectedDate)}
                 </span>
               </div>
             </div>
@@ -1575,9 +1641,9 @@ export function AccountingDashboard() {
           >
             {isSavingArqueo
               ? "Guardando..."
-              : cierreHoy
-                ? "Reemplazar cierre del dia"
-                : "Guardar cierre del dia"}
+              : cierreSeleccionado
+                ? "Reemplazar cierre de la fecha"
+                : "Guardar cierre de la fecha"}
           </button>
         </section>
       ) : null}

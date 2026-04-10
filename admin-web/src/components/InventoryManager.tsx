@@ -6,6 +6,7 @@ import {
   type InventoryPieceKey,
 } from "../constants/inventory"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
+import { formatDateTime, getTodayDateKey } from "../lib/datetime"
 import { supabase } from "../lib/supabase"
 import type {
   InventarioDiario,
@@ -77,10 +78,7 @@ const AJUSTE_FIELD_MAP: Record<
 }
 
 function getTodayLocalISODate() {
-  const now = new Date()
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-
-  return localDate.toISOString().slice(0, 10)
+  return getTodayDateKey()
 }
 
 function getTotalEnParrilla(inventario: InventarioDiario) {
@@ -161,15 +159,12 @@ function formatSignedMetric(value: number) {
   return formatted
 }
 
-function formatDateTime(value: string | null) {
+function formatInventoryDateTime(value: string | null) {
   if (!value) {
     return ""
   }
 
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value))
+  return formatDateTime(value)
 }
 
 function getPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
@@ -187,6 +182,10 @@ function getPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey
     mermas +
     ajustes
   )
+}
+
+function getRoundedPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
+  return Math.round(getPieceStock(inventario, pieceKey))
 }
 
 function parseNonNegativeInteger(value: string) {
@@ -397,7 +396,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
         )
         setNotasCierre(inventory.notas_cierre ?? "")
         setSelectedPieceAdjustment("alas")
-        setPieceStockValue(String(getPieceStock(inventory, "alas")))
+        setPieceStockValue(String(getRoundedPieceStock(inventory, "alas")))
         setPieceAdjustmentReason("")
         await loadTodayMovements(inventory.id)
         return
@@ -497,7 +496,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       setConteoFisicoCierre("")
       setNotasCierre("")
       setSelectedPieceAdjustment("alas")
-      setPieceStockValue(String(getPieceStock(inventory, "alas")))
+      setPieceStockValue(String(getRoundedPieceStock(inventory, "alas")))
       setPieceAdjustmentReason("")
       onInventoryStarted?.()
       toast.success("Inventario del dia iniciado correctamente")
@@ -656,7 +655,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       const inventory = data as InventarioDiario
       setTodayInventory(inventory)
       if (selectedPieceAdjustment === mermaPiece) {
-        setPieceStockValue(String(getPieceStock(inventory, mermaPiece)))
+        setPieceStockValue(String(getRoundedPieceStock(inventory, mermaPiece)))
       }
       setMermaAmount("1")
       setMermaReason("")
@@ -681,7 +680,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     }
 
     setSelectedPieceAdjustment(pieceKey)
-    setPieceStockValue(String(getPieceStock(todayInventory, pieceKey)))
+    setPieceStockValue(String(getRoundedPieceStock(todayInventory, pieceKey)))
     setPieceAdjustmentReason("")
     setActiveOperationTab("ajustes")
   }
@@ -708,7 +707,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       return
     }
 
-    const currentStock = getPieceStock(todayInventory, selectedPieceAdjustment)
+    const currentStock = getRoundedPieceStock(todayInventory, selectedPieceAdjustment)
     const deltaPieces = targetStockValue - currentStock
 
     if (deltaPieces === 0) {
@@ -717,8 +716,8 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     }
 
     const ajusteField = AJUSTE_FIELD_MAP[selectedPieceAdjustment]
-    const nextPieceAdjustment = (todayInventory[ajusteField] ?? 0) + deltaPieces
-    const nextAdminAdjustment = (todayInventory.ajustes_admin ?? 0) + deltaPieces
+    const nextPieceAdjustment = Math.round(todayInventory[ajusteField] ?? 0) + deltaPieces
+    const nextAdminAdjustment = Math.round(todayInventory.ajustes_admin ?? 0) + deltaPieces
 
     const payload: InventarioDiarioUpdate = {
       [ajusteField]: nextPieceAdjustment,
@@ -756,7 +755,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       const inventory = data as InventarioDiario
       setTodayInventory(inventory)
       setPieceStockValue(
-        String(getPieceStock(inventory, selectedPieceAdjustment)),
+        String(getRoundedPieceStock(inventory, selectedPieceAdjustment)),
       )
       setPieceAdjustmentReason("")
       await syncInventoryMovements(todayInventory.id)
@@ -808,7 +807,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       setConteoFisicoCierre("")
       setNotasCierre("")
       setPieceStockValue(
-        String(getPieceStock(inventory, selectedPieceAdjustment)),
+        String(getRoundedPieceStock(inventory, selectedPieceAdjustment)),
       )
       setPieceAdjustmentReason("")
       await createInventoryMovements([
@@ -959,7 +958,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
   const canUseAdminAdjustments = adminAccess.isAdmin
-  const selectedPieceStock = getPieceStock(todayInventory, selectedPieceAdjustment)
+  const selectedPieceStock = getRoundedPieceStock(todayInventory, selectedPieceAdjustment)
   const selectedPieceVentas =
     todayInventory[PIECE_FIELD_MAP[selectedPieceAdjustment]] ?? 0
   const selectedPieceMermas =
@@ -1010,7 +1009,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
             Cierre de turno registrado correctamente
           </h3>
           <p className="mt-2 text-sm text-emerald-800">
-            Cerrado el {formatDateTime(todayInventory.cerrado_en)}. Ya no deberias registrar movimientos operativos hasta reabrir el dia.
+            Cerrado el {formatInventoryDateTime(todayInventory.cerrado_en)}. Ya no deberias registrar movimientos operativos hasta reabrir el dia.
           </p>
         </div>
       ) : null}
@@ -1396,7 +1395,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
                           {getMovementTitle(movement)}
                         </p>
                         <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
-                          {formatDateTime(movement.creado_en)}
+                          {formatInventoryDateTime(movement.creado_en)}
                         </p>
                       </div>
                       <p className={"text-sm font-black " + getMovementTone(movement)}>
@@ -1561,7 +1560,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
           {isClosed ? (
             <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-slate-700">
-                Cierre registrado: {formatDateTime(todayInventory.cerrado_en)}
+                Cierre registrado: {formatInventoryDateTime(todayInventory.cerrado_en)}
               </p>
               <p className="mt-3 text-sm text-slate-600">
                 {todayInventory.notas_cierre?.trim() || "Sin notas de cierre."}

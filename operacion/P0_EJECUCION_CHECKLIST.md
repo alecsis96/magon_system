@@ -8,9 +8,9 @@ Este checklist ejecuta el backlog P0 con evidencia y gate semanal.
 - [x] Saneamiento de secretos en working tree: archivos sensibles removidos (`contraseña supabase.txt`, `app-repartidor/repartidor-magon-firebase-adminsdk-fbsvc-b20c4e4a6a.json`) y patrones de bloqueo en `.gitignore` (`*supabase*.txt`, `*password*.txt`, `*contrase*.txt`, `*firebase-adminsdk*.json`, `*service-account*.json`).
 
 ## P0-01 Baseline esquema y RPC
-- [ ] Exportar firmas actuales de RPC criticas.
+- [x] Exportar firmas actuales de RPC criticas (baseline documental en repo).
 - [ ] Validar `24_tanda2_rpc_verificacion_readonly.sql` en PASS.
-- [ ] Publicar matriz RPC usada vs firma real.
+- [x] Publicar matriz RPC usada vs firma real (`operacion/P0_01_MATRIZ_RPC_BASELINE.md`).
 
 ## P0-02 Hardening final de permisos
 - [ ] Ejecutar `22_tanda1_verificacion_readonly.sql`.

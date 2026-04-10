@@ -13,6 +13,7 @@ Owner: `Pendiente`
   - CI gates minimos presentes: workflow `quality-gates.yml` con `lint` y `typecheck` para `admin-web` y `app-repartidor`.
   - Scripts `typecheck` presentes en ambos `package.json`.
   - Saneamiento de secretos visible en working tree: archivo sensible removido y patrones de bloqueo en `.gitignore`.
+  - P0-01: matriz baseline de RPC criticas publicada en `operacion/P0_01_MATRIZ_RPC_BASELINE.md` (inventario de uso frontend + firma esperada por SQL/tipos versionados).
 - Pendientes criticos para cierre W1:
   - Ejecutar rutina diaria de evidencia operativa (PASS/FAIL) con soporte en reportes.
   - Correr validaciones readonly y smoke operativo con evidencia de resultados.

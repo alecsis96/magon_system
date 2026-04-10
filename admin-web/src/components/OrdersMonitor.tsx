@@ -156,6 +156,7 @@ export function OrdersMonitor() {
   const [isLoadingActive, setIsLoadingActive] = useState(true)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
+  const [openActionsMenuOrderId, setOpenActionsMenuOrderId] = useState<string | null>(null)
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
 
   async function refreshAdminAccess() {
@@ -242,6 +243,47 @@ export function OrdersMonitor() {
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    setOpenActionsMenuOrderId(null)
+  }, [view])
+
+  useEffect(() => {
+    if (!openActionsMenuOrderId) {
+      return
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement | null
+
+      if (!target) {
+        return
+      }
+
+      const clickedMenu = target.closest(`[data-actions-menu-root="${openActionsMenuOrderId}"]`)
+      const clickedTrigger = target.closest(
+        `[data-actions-menu-trigger="${openActionsMenuOrderId}"]`,
+      )
+
+      if (!clickedMenu && !clickedTrigger) {
+        setOpenActionsMenuOrderId(null)
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenActionsMenuOrderId(null)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEscape)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [openActionsMenuOrderId])
 
   async function handleMarkPaid(order: OrderWithClient) {
     if (order.estado_pago === "pagado") {
@@ -478,29 +520,70 @@ export function OrdersMonitor() {
               return (
                 <article
                   key={order.id}
-                  className="rounded-[1.6rem] border border-slate-200 bg-slate-50/90 p-4 shadow-sm"
+                  className="rounded-[1.35rem] border border-slate-200 bg-slate-50/90 p-3 shadow-sm sm:p-4"
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
                       {getShortOrderId(order.id)}
                     </p>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ring-1 ${paymentStatusClasses}`}
-                    >
-                      {formatPaymentStatus(order.estado_pago)}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ring-1 ${paymentStatusClasses}`}
+                      >
+                        {formatPaymentStatus(order.estado_pago)}
+                      </span>
+
+                      {view === "active" && adminAccess.isAdmin ? (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenActionsMenuOrderId((currentId) =>
+                                currentId === order.id ? null : order.id,
+                              )
+                            }
+                            disabled={isProcessing}
+                            aria-label={`Abrir acciones del pedido ${getShortOrderId(order.id)}`}
+                            data-actions-menu-trigger={order.id}
+                            className="grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-base font-black leading-none text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            ...
+                          </button>
+
+                          {openActionsMenuOrderId === order.id ? (
+                            <div
+                              data-actions-menu-root={order.id}
+                              className="absolute right-0 top-9 z-20 min-w-[11rem] rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_36px_rgba(15,23,42,0.16)]"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionsMenuOrderId(null)
+                                  void handleDeleteOrder(order, view)
+                                }}
+                                disabled={isProcessing}
+                                aria-label={`Eliminar pedido ${getShortOrderId(order.id)}`}
+                                className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-200 disabled:cursor-not-allowed disabled:text-slate-400"
+                              >
+                                Eliminar pedido
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <h3 className="mt-2 text-base font-bold text-slate-900">
+                  <h3 className="mt-1.5 text-[15px] font-bold text-slate-900">
                     {customerName}
                   </h3>
 
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                     <div className="col-span-2 min-w-0">
                       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                         Fecha
                       </dt>
-                      <dd className="mt-0.5 truncate font-semibold text-slate-900">
+                      <dd className="mt-0.5 truncate text-[13px] font-semibold text-slate-900">
                         {formatOrderDateTime(order.fecha_creacion)}
                       </dd>
                     </div>
@@ -509,7 +592,7 @@ export function OrdersMonitor() {
                       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                         Paquete
                       </dt>
-                      <dd className="mt-0.5 overflow-hidden text-xs font-semibold leading-5 text-slate-700 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                      <dd className="mt-0.5 overflow-hidden text-[12px] font-semibold leading-4 text-slate-700 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                         {packageSummary}
                       </dd>
                     </div>
@@ -527,7 +610,7 @@ export function OrdersMonitor() {
                       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                         Total
                       </dt>
-                      <dd className="mt-0.5 truncate text-sm font-black text-slate-900">
+                      <dd className="mt-0.5 truncate text-[14px] font-black text-slate-900">
                         {currencyFormatter.format(order.total)}
                       </dd>
                     </div>
@@ -541,20 +624,22 @@ export function OrdersMonitor() {
                       </dd>
                     </div>
 
-                    <div className="min-w-0">
-                      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Estado pago
-                      </dt>
-                      <dd
-                        className={`mt-0.5 truncate font-semibold ${
-                          order.estado_pago === "pagado"
-                            ? "text-emerald-600"
-                            : "text-rose-600"
-                        }`}
-                      >
-                        {formatPaymentStatus(order.estado_pago)}
-                      </dd>
-                    </div>
+                    {view === "history" ? (
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Estado pago
+                        </dt>
+                        <dd
+                          className={`mt-0.5 truncate font-semibold ${
+                            order.estado_pago === "pagado"
+                              ? "text-emerald-600"
+                              : "text-rose-600"
+                          }`}
+                        >
+                          {formatPaymentStatus(order.estado_pago)}
+                        </dd>
+                      </div>
+                    ) : null}
 
                     {view === "history" ? (
                       <div className="col-span-2 min-w-0">
@@ -569,42 +654,44 @@ export function OrdersMonitor() {
                   </dl>
 
                   {order.tipo_pedido === "domicilio" ? (
-                    <div className="mt-3">
+                    <div className="mt-2.5">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                         Direccion
                       </p>
-                      <p className="mt-1 overflow-hidden text-xs leading-5 text-slate-600 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                      <p className="mt-0.5 overflow-hidden text-[12px] leading-4 text-slate-600 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                         {deliveryNotes}
                       </p>
                     </div>
                   ) : null}
 
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {view === "active" ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => void handleMarkPaid(order)}
-                          disabled={isProcessing || order.estado_pago === "pagado"}
-                          className="min-w-0 flex-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[13px] font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          {order.estado_pago === "pendiente"
-                            ? "Marcar pagado"
-                            : "Pago confirmado"}
-                        </button>
+                        {order.estado_pago === "pendiente" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleMarkPaid(order)}
+                            disabled={isProcessing}
+                            className="min-w-0 flex-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Marcar pagado
+                          </button>
+                        ) : null}
 
                         <button
                           type="button"
                           onClick={() => void handleAdvanceOrder(order)}
                           disabled={isProcessing}
-                          className="min-w-0 flex-1 rounded-2xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                          className={`min-w-0 rounded-2xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none ${
+                            order.estado_pago === "pendiente" ? "flex-1" : "w-full"
+                          }`}
                         >
                           {statusAction.label}
                         </button>
                       </>
                     ) : null}
 
-                    {adminAccess.isAdmin ? (
+                    {adminAccess.isAdmin && view === "history" ? (
                       <button
                         type="button"
                         onClick={() => void handleDeleteOrder(order, view)}

@@ -2,10 +2,11 @@ const DEFAULT_LOCALE = "es-MX"
 const DEFAULT_TIME_ZONE = "America/Mexico_City"
 
 const ISO_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const ISO_DATE_TIME_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]/
 const ISO_NAIVE_DATE_TIME_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/
 const POSTGRES_DATE_TIME_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:\s*(Z|[+-]\d{2}(?::?\d{2})?))?$/i
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(?:\s*(Z|UTC|GMT|[+-]\d{2}(?::?\d{2})?))?$/i
 
 type DateInput = Date | string | number | null | undefined
 
@@ -44,7 +45,7 @@ function parseNaiveDateTime(value: string, assumeUtcForNaive: boolean) {
   const day = Number(match[3])
   const hour = Number(match[4])
   const minute = Number(match[5])
-  const second = Number(match[6])
+  const second = Number(match[6] ?? "00")
   const fraction = match[7] ?? ""
   const milliseconds = fraction ? Number(fraction.slice(0, 3).padEnd(3, "0")) : 0
 
@@ -90,7 +91,9 @@ function parseNaiveDateTime(value: string, assumeUtcForNaive: boolean) {
 }
 
 function normalizeOffset(value: string) {
-  if (value.toUpperCase() === "Z") {
+  const upperValue = value.toUpperCase()
+
+  if (upperValue === "Z" || upperValue === "UTC" || upperValue === "GMT") {
     return "Z"
   }
 
@@ -118,7 +121,7 @@ function parsePostgresDateTime(value: string, assumeUtcForNaive: boolean) {
     return null
   }
 
-  const [, year, month, day, hour, minute, second, fraction = "", offsetRaw] = match
+  const [, year, month, day, hour, minute, second = "00", fraction = "", offsetRaw] = match
   const milliseconds = fraction ? fraction.slice(0, 3).padEnd(3, "0") : "000"
 
   if (!offsetRaw) {
@@ -206,6 +209,10 @@ export function parseDateTime(
 
   if (parsedPostgresDateTime) {
     return parsedPostgresDateTime
+  }
+
+  if (ISO_DATE_TIME_PREFIX_PATTERN.test(normalized)) {
+    return null
   }
 
   const parsed = new Date(normalized)

@@ -3,6 +3,8 @@ const DEFAULT_TIME_ZONE = "America/Mexico_City"
 
 const ISO_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const ISO_TIME_ZONE_PATTERN = /(?:Z|[+-]\d{2}:\d{2})$/i
+const ISO_NAIVE_DATE_TIME_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/
 
 type DateInput = Date | string | number | null | undefined
 
@@ -27,6 +29,63 @@ type FormatDateKeyOptions = {
 
 function isValidDate(value: Date) {
   return !Number.isNaN(value.getTime())
+}
+
+function parseNaiveDateTime(value: string, assumeUtcForNaive: boolean) {
+  const match = ISO_NAIVE_DATE_TIME_PATTERN.exec(value)
+
+  if (!match) {
+    return null
+  }
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const hour = Number(match[4])
+  const minute = Number(match[5])
+  const second = Number(match[6])
+  const fraction = match[7] ?? ""
+  const milliseconds = fraction ? Number(fraction.slice(0, 3).padEnd(3, "0")) : 0
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    !Number.isInteger(second) ||
+    !Number.isInteger(milliseconds)
+  ) {
+    return null
+  }
+
+  const parsed = assumeUtcForNaive
+    ? new Date(Date.UTC(year, month - 1, day, hour, minute, second, milliseconds))
+    : new Date(year, month - 1, day, hour, minute, second, milliseconds)
+
+  if (!isValidDate(parsed)) {
+    return null
+  }
+
+  const parsedYear = assumeUtcForNaive ? parsed.getUTCFullYear() : parsed.getFullYear()
+  const parsedMonth = assumeUtcForNaive ? parsed.getUTCMonth() + 1 : parsed.getMonth() + 1
+  const parsedDay = assumeUtcForNaive ? parsed.getUTCDate() : parsed.getDate()
+  const parsedHour = assumeUtcForNaive ? parsed.getUTCHours() : parsed.getHours()
+  const parsedMinute = assumeUtcForNaive ? parsed.getUTCMinutes() : parsed.getMinutes()
+  const parsedSecond = assumeUtcForNaive ? parsed.getUTCSeconds() : parsed.getSeconds()
+
+  if (
+    parsedYear !== year ||
+    parsedMonth !== month ||
+    parsedDay !== day ||
+    parsedHour !== hour ||
+    parsedMinute !== minute ||
+    parsedSecond !== second
+  ) {
+    return null
+  }
+
+  return parsed
 }
 
 function normalizeInputDate(value: DateInput) {
@@ -91,9 +150,16 @@ export function parseDateTime(
 
   const { assumeUtcForNaive = true } = options
   const hasTimeZone = ISO_TIME_ZONE_PATTERN.test(normalized)
-  const parsed = new Date(
-    !hasTimeZone && assumeUtcForNaive ? `${normalized}Z` : normalized,
-  )
+
+  if (!hasTimeZone) {
+    const parsedNaive = parseNaiveDateTime(normalized, assumeUtcForNaive)
+
+    if (parsedNaive) {
+      return parsedNaive
+    }
+  }
+
+  const parsed = new Date(normalized)
 
   return isValidDate(parsed) ? parsed : null
 }

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Toaster, toast } from "react-hot-toast"
-import { AdminAccessButton } from "./components/AdminAccessButton"
 import { AccountingDashboard } from "./components/AccountingDashboard"
 import { AdminClientes } from "./components/AdminClientes"
 import { OptionalCheckoutCustomerPicker } from "./components/OptionalCheckoutCustomerPicker"
@@ -59,7 +58,7 @@ type CartItem = {
   producto: Producto
   merma: string | null
   threeQuarterVariant: ThreeQuarterVariant | null
-  singlePieceType: InventoryPieceKey | null
+  manualPieceSelection: InventoryPieceKey[]
 }
 
 type PrimaryTab = "POS" | "MONITOR"
@@ -133,8 +132,38 @@ function isThreeQuarterProduct(producto: Producto) {
   )
 }
 
-function isSinglePieceProduct(producto: Producto) {
-  return (getInventoryPieceCount(producto) ?? 0) === 1
+function getManualPieceRequirement(producto: Producto) {
+  const inventoryPieceCount = getInventoryPieceCount(producto) ?? 0
+
+  if (inventoryPieceCount === 1 || inventoryPieceCount === 2) {
+    return inventoryPieceCount
+  }
+
+  return null
+}
+
+function requiresManualPieceSelection(producto: Producto) {
+  return getManualPieceRequirement(producto) !== null
+}
+
+function getManualSelectionLabel(selectedPieces: InventoryPieceKey[]) {
+  const pieceCounts = selectedPieces.reduce(
+    (currentCounts, pieceKey) => {
+      currentCounts[pieceKey] += 1
+      return currentCounts
+    },
+    createEmptyPieceBreakdown(),
+  )
+
+  const labels = (Object.keys(PIECE_LABELS) as InventoryPieceKey[])
+    .filter((pieceKey) => pieceCounts[pieceKey] > 0)
+    .map((pieceKey) => {
+      const count = pieceCounts[pieceKey]
+      const pieceLabel = PIECE_LABELS[pieceKey]
+      return `${count} ${pieceLabel}${count === 1 ? "" : "s"}`
+    })
+
+  return labels.join(", ")
 }
 
 function createEmptyPieceBreakdown(): PieceBreakdown {
@@ -156,15 +185,15 @@ function getCartItemBreakdown(item: CartItem) {
     return THREE_QUARTER_VARIANTS[item.threeQuarterVariant]
   }
 
-  if (isSinglePieceProduct(item.producto)) {
-    if (!item.singlePieceType) {
+  if (requiresManualPieceSelection(item.producto)) {
+    if (item.manualPieceSelection.length === 0) {
       return createEmptyPieceBreakdown()
     }
 
-    return {
-      ...createEmptyPieceBreakdown(),
-      [item.singlePieceType]: 1,
-    }
+    return item.manualPieceSelection.reduce((breakdown, pieceType) => {
+      breakdown[pieceType] += 1
+      return breakdown
+    }, createEmptyPieceBreakdown())
   }
 
   return getProductBreakdown(item.producto)
@@ -337,6 +366,9 @@ function App() {
   const [isPosAdminPanelOpen, setIsPosAdminPanelOpen] = useState(false)
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ADMIN_ACCESS)
   const [isLoadingAdminAccess, setIsLoadingAdminAccess] = useState(true)
+  const [adminEmail, setAdminEmail] = useState("")
+  const [adminPassword, setAdminPassword] = useState("")
+  const [isSubmittingAdminAccess, setIsSubmittingAdminAccess] = useState(false)
   const posAdminPanelRef = useRef<HTMLDivElement | null>(null)
 
   const refreshAdminAccess = useCallback(async () => {
@@ -387,6 +419,57 @@ function App() {
   useEffect(() => {
     void checkTodayInventoryStatus(todayIsoDate)
   }, [checkTodayInventoryStatus, todayIsoDate])
+
+  const handleAdminLogin = useCallback(async () => {
+    if (!adminEmail.trim() || !adminPassword) {
+      toast.error("Captura correo y contrasena")
+      return
+    }
+
+    try {
+      setIsSubmittingAdminAccess(true)
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: adminEmail.trim(),
+        password: adminPassword,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      await refreshAdminAccess()
+      setAdminPassword("")
+      toast.success("Sesion de administrador iniciada")
+    } catch (error) {
+      console.error("Error al iniciar sesion admin:", error)
+      toast.error("No se pudo iniciar sesion")
+    } finally {
+      setIsSubmittingAdminAccess(false)
+    }
+  }, [adminEmail, adminPassword, refreshAdminAccess])
+
+  const handleAdminLogout = useCallback(async () => {
+    try {
+      setIsSubmittingAdminAccess(true)
+
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        throw error
+      }
+
+      setAdminAccess(DEFAULT_ADMIN_ACCESS)
+      setAdminPassword("")
+      setIsPosAdminPanelOpen(false)
+      toast.success("Sesion cerrada")
+    } catch (error) {
+      console.error("Error al cerrar sesion admin:", error)
+      toast.error("No se pudo cerrar sesion")
+    } finally {
+      setIsSubmittingAdminAccess(false)
+    }
+  }, [])
 
   useEffect(() => {
     void refreshAdminAccess()
@@ -477,7 +560,7 @@ function App() {
         threeQuarterVariant: isThreeQuarterProduct(producto)
           ? "ala_pechuga"
           : null,
-        singlePieceType: null,
+        manualPieceSelection: [],
       },
     ])
   }
@@ -505,14 +588,42 @@ function App() {
     )
   }
 
-  function handleSinglePieceTypeChange(
+  function handleManualPieceSelectionChange(
     lineId: string,
     pieceType: InventoryPieceKey,
+    mode: "add" | "remove",
   ) {
     setCart((currentCart) =>
       currentCart.map((item) =>
         item.lineId === lineId
-          ? { ...item, singlePieceType: pieceType }
+          ? {
+              ...item,
+              manualPieceSelection: (() => {
+                const requiredPieces = getManualPieceRequirement(item.producto)
+
+                if (!requiredPieces) {
+                  return item.manualPieceSelection
+                }
+
+                if (mode === "add") {
+                  if (item.manualPieceSelection.length >= requiredPieces) {
+                    return item.manualPieceSelection
+                  }
+
+                  return [...item.manualPieceSelection, pieceType]
+                }
+
+                const pieceIndex = item.manualPieceSelection.indexOf(pieceType)
+
+                if (pieceIndex === -1) {
+                  return item.manualPieceSelection
+                }
+
+                return item.manualPieceSelection.filter(
+                  (_, index) => index !== pieceIndex,
+                )
+              })(),
+            }
           : item,
       ),
     )
@@ -588,10 +699,20 @@ function App() {
 
     if (
       cart.some(
-        (item) => isSinglePieceProduct(item.producto) && !item.singlePieceType,
+        (item) => {
+          const requiredPieces = getManualPieceRequirement(item.producto)
+
+          if (!requiredPieces) {
+            return false
+          }
+
+          return item.manualPieceSelection.length !== requiredPieces
+        },
       )
     ) {
-      toast.error("Selecciona la pieza de cada producto marcado como 1 Pieza")
+      toast.error(
+        "Completa la seleccion de piezas en productos que requieren asignacion manual",
+      )
       return false
     }
 
@@ -817,13 +938,19 @@ function App() {
 
     return currentTotal + detalle.piezasInventario + (item.merma ? 1 : 0)
   }, 0)
-  const hasPendingSinglePieceSelection = cart.some(
-    (item) => isSinglePieceProduct(item.producto) && !item.singlePieceType,
-  )
+  const hasPendingManualPieceSelection = cart.some((item) => {
+    const requiredPieces = getManualPieceRequirement(item.producto)
+
+    if (!requiredPieces) {
+      return false
+    }
+
+    return item.manualPieceSelection.length !== requiredPieces
+  })
   const isCheckoutDisabled =
     cart.length === 0 ||
     (tipoPedido === "domicilio" && !selectedCustomer) ||
-    hasPendingSinglePieceSelection ||
+    hasPendingManualPieceSelection ||
     isCheckingOut
   const menuIsActive =
     activeTab === "INVENTARIO" ||
@@ -862,10 +989,82 @@ function App() {
 
       {isPosAdminPanelOpen ? (
         <div className="absolute right-0 top-[calc(100%+0.55rem)] z-30 w-[min(92vw,18rem)] rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-[0_20px_45px_rgba(15,23,42,0.18)]">
-          <AdminAccessButton
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-none transition hover:bg-slate-50 focus:ring-slate-100"
-            panelClassName="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(92vw,22rem)] rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
-          />
+          {adminAccess.isAuthenticated ? (
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Cuenta actual
+                </p>
+                <p className="mt-1.5 text-sm font-bold text-slate-900">
+                  {adminAccess.email ?? "Sin correo"}
+                </p>
+                <p
+                  className={`mt-2 text-xs font-semibold ${
+                    adminAccess.isAdmin ? "text-emerald-600" : "text-amber-600"
+                  }`}
+                >
+                  {adminAccess.isAdmin
+                    ? "Permisos de administrador verificados"
+                    : "Sesion iniciada, pero sin permisos de administrador"}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleAdminLogout()}
+                disabled={isSubmittingAdminAccess}
+                className="w-full rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                {isSubmittingAdminAccess ? "Cerrando sesion..." : "Cerrar sesion"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label
+                  htmlFor="admin-email"
+                  className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
+                >
+                  Correo
+                </label>
+                <input
+                  id="admin-email"
+                  type="email"
+                  value={adminEmail}
+                  onChange={(event) => setAdminEmail(event.target.value)}
+                  autoComplete="email"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="admin-password"
+                  className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
+                >
+                  Contrasena
+                </label>
+                <input
+                  id="admin-password"
+                  type="password"
+                  value={adminPassword}
+                  onChange={(event) => setAdminPassword(event.target.value)}
+                  autoComplete="current-password"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleAdminLogin()}
+                disabled={isSubmittingAdminAccess}
+                className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                {isSubmittingAdminAccess ? "Entrando..." : "Entrar como admin"}
+              </button>
+            </div>
+          )}
+
           <p className="mt-2 text-[11px] text-slate-500">
             {isLoadingAdminAccess
               ? "Validando estado de sesion..."
@@ -1045,8 +1244,14 @@ function App() {
                           const showMermaPanel = openMermaItemId === item.lineId
                           const showThreeQuarterSelector =
                             isThreeQuarterProduct(item.producto)
-                          const showSinglePieceSelector =
-                            isSinglePieceProduct(item.producto)
+                          const manualPieceRequirement = getManualPieceRequirement(
+                            item.producto,
+                          )
+                          const showManualPieceSelector =
+                            manualPieceRequirement !== null
+                          const selectedCompositionLabel = getManualSelectionLabel(
+                            item.manualPieceSelection,
+                          )
 
                           return (
                             <article
@@ -1077,12 +1282,11 @@ function App() {
                                       }
                                     </p>
                                   ) : null}
-                                  {showSinglePieceSelector ? (
+                                  {showManualPieceSelector ? (
                                     <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
-                                      Pieza:{" "}
-                                      {item.singlePieceType
-                                        ? PIECE_LABELS[item.singlePieceType]
-                                        : "Pendiente por seleccionar"}
+                                      Composicion:{" "}
+                                      {selectedCompositionLabel ||
+                                        "Pendiente por seleccionar"}
                                     </p>
                                   ) : null}
                                   {item.merma ? (
@@ -1135,36 +1339,74 @@ function App() {
                                   </div>
                                 ) : null}
 
-                                {showSinglePieceSelector ? (
+                                {showManualPieceSelector && manualPieceRequirement ? (
                                   <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
                                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
-                                      Selecciona la pieza a descontar
+                                      Selecciona {manualPieceRequirement} pieza
+                                      {manualPieceRequirement === 1 ? "" : "s"} a descontar
+                                    </p>
+                                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-500">
+                                      {item.manualPieceSelection.length}/{manualPieceRequirement} asignada
+                                      {item.manualPieceSelection.length === 1 ? "" : "s"}
                                     </p>
                                     <div className="mt-3 grid gap-2">
                                       {(Object.keys(
                                         PIECE_LABELS,
                                       ) as InventoryPieceKey[]).map((pieceKey) => {
-                                        const isActive =
-                                          item.singlePieceType === pieceKey
+                                        const selectedCount =
+                                          item.manualPieceSelection.filter(
+                                            (selectedPiece) =>
+                                              selectedPiece === pieceKey,
+                                          ).length
+                                        const canAdd =
+                                          item.manualPieceSelection.length <
+                                          manualPieceRequirement
+                                        const canRemove = selectedCount > 0
 
                                         return (
-                                          <button
+                                          <div
                                             key={pieceKey}
-                                            type="button"
-                                            onClick={() =>
-                                              handleSinglePieceTypeChange(
-                                                item.lineId,
-                                                pieceKey,
-                                              )
-                                            }
-                                            className={`rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
-                                              isActive
-                                                ? "bg-slate-900 text-white"
-                                                : "bg-white text-slate-700 ring-1 ring-sky-200 hover:bg-sky-100"
-                                            }`}
+                                            className="flex items-center justify-between gap-2 rounded-2xl bg-white px-3 py-2 text-sm ring-1 ring-sky-200"
                                           >
-                                            {PIECE_LABELS[pieceKey]}
-                                          </button>
+                                            <p className="font-bold text-slate-700">
+                                              {PIECE_LABELS[pieceKey]}
+                                            </p>
+                                            <div className="flex items-center gap-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleManualPieceSelectionChange(
+                                                    item.lineId,
+                                                    pieceKey,
+                                                    "remove",
+                                                  )
+                                                }
+                                                disabled={!canRemove}
+                                                className="h-8 w-8 rounded-xl bg-sky-100 text-base font-black text-sky-700 transition hover:bg-sky-200 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                                aria-label={`Quitar ${PIECE_LABELS[pieceKey]}`}
+                                              >
+                                                -
+                                              </button>
+                                              <span className="inline-flex min-w-8 items-center justify-center rounded-xl bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">
+                                                {selectedCount}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleManualPieceSelectionChange(
+                                                    item.lineId,
+                                                    pieceKey,
+                                                    "add",
+                                                  )
+                                                }
+                                                disabled={!canAdd}
+                                                className="h-8 w-8 rounded-xl bg-sky-600 text-base font-black text-white transition hover:bg-sky-700 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                                                aria-label={`Agregar ${PIECE_LABELS[pieceKey]}`}
+                                              >
+                                                +
+                                              </button>
+                                            </div>
+                                          </div>
                                         )
                                       })}
                                     </div>
@@ -1382,15 +1624,6 @@ function App() {
               </button>
             )
           })}
-
-          <div className="my-2 border-t border-slate-200" />
-
-          <div className="relative">
-            <AdminAccessButton
-              className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-700 shadow-none transition hover:bg-slate-50 focus:ring-slate-100"
-              panelClassName="absolute bottom-[calc(100%+0.5rem)] left-0 right-0 z-40 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
-            />
-          </div>
         </div>
       ) : null}
 

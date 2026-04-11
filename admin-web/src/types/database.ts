@@ -152,6 +152,11 @@ export interface InventarioDiario extends Record<string, unknown> {
   stock_muslos: number;
   stock_pechugas_g: number;
   stock_pechugas_c: number;
+  min_alas: number;
+  min_piernas: number;
+  min_muslos: number;
+  min_pechugas_g: number;
+  min_pechugas_c: number;
   stock_final: number | null;
   conteo_fisico_cierre: number | null;
   diferencia_cierre: number | null;
@@ -187,6 +192,11 @@ export interface InventarioDiarioInsert extends Record<string, unknown> {
   stock_muslos?: number;
   stock_pechugas_g?: number;
   stock_pechugas_c?: number;
+  min_alas?: number;
+  min_piernas?: number;
+  min_muslos?: number;
+  min_pechugas_g?: number;
+  min_pechugas_c?: number;
   conteo_fisico_cierre?: number | null;
   diferencia_cierre?: number | null;
   notas_cierre?: string | null;
@@ -221,6 +231,11 @@ export interface InventarioDiarioUpdate extends Record<string, unknown> {
   stock_muslos?: number;
   stock_pechugas_g?: number;
   stock_pechugas_c?: number;
+  min_alas?: number;
+  min_piernas?: number;
+  min_muslos?: number;
+  min_pechugas_g?: number;
+  min_pechugas_c?: number;
   conteo_fisico_cierre?: number | null;
   diferencia_cierre?: number | null;
   notas_cierre?: string | null;

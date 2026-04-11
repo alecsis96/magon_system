@@ -20,6 +20,7 @@ import type {
 type MermaType = "caidos" | "quemados"
 type OperationTab = "proveedor" | "mermas" | "ajustes"
 type PieceStockAllocation = Record<InventoryPieceKey, number>
+type PieceMinimumThresholds = Record<InventoryPieceKey, number>
 const TOTAL_PIEZAS_POR_POLLO = Object.values(PIEZAS_POR_POLLO).reduce(
   (total, value) => total + value,
   0,
@@ -98,6 +99,26 @@ const PIECE_STOCK_FIELD_MAP: Record<
   pechugas_grandes: "stock_pechugas_g",
   pechugas_chicas: "stock_pechugas_c",
 }
+
+const PIECE_MIN_FIELD_MAP: Record<
+  InventoryPieceKey,
+  keyof Pick<
+    InventarioDiario,
+    | "min_alas"
+    | "min_piernas"
+    | "min_muslos"
+    | "min_pechugas_g"
+    | "min_pechugas_c"
+  >
+> = {
+  alas: "min_alas",
+  piernas: "min_piernas",
+  muslos: "min_muslos",
+  pechugas_grandes: "min_pechugas_g",
+  pechugas_chicas: "min_pechugas_c",
+}
+
+const DEFAULT_PIECE_MINIMUM_THRESHOLD = 5
 
 function getTodayLocalISODate() {
   return getTodayDateKey()
@@ -279,6 +300,21 @@ function getPieceStockAllocation(inventario: InventarioDiario) {
   return getBalancedPieceStockAllocation(inventario)
 }
 
+function getPieceMinimumThresholds(inventario: InventarioDiario) {
+  return Object.fromEntries(
+    PIECE_KEYS.map((pieceKey) => {
+      const minField = PIECE_MIN_FIELD_MAP[pieceKey]
+      const minValue = inventario[minField]
+      const normalized =
+        typeof minValue === "number" && Number.isFinite(minValue)
+          ? Math.max(0, Math.round(minValue))
+          : DEFAULT_PIECE_MINIMUM_THRESHOLD
+
+      return [pieceKey, normalized]
+    }),
+  ) as PieceMinimumThresholds
+}
+
 function getAllocatedPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
   return getPieceStockAllocation(inventario)[pieceKey]
 }
@@ -447,6 +483,14 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     useState<InventoryPieceKey>("alas")
   const [pieceStockValue, setPieceStockValue] = useState("0")
   const [pieceAdjustmentReason, setPieceAdjustmentReason] = useState("")
+  const [pieceMinimumInputs, setPieceMinimumInputs] =
+    useState<Record<InventoryPieceKey, string>>({
+      alas: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+      piernas: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+      muslos: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+      pechugas_grandes: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+      pechugas_chicas: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+    })
   const [conteoFisicoCierre, setConteoFisicoCierre] = useState("")
   const [notasCierre, setNotasCierre] = useState("")
   const [isLoading, setIsLoading] = useState(true)
@@ -454,6 +498,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
   const [isSavingIngreso, setIsSavingIngreso] = useState(false)
   const [isSavingMerma, setIsSavingMerma] = useState(false)
   const [isSavingPieceAdjustment, setIsSavingPieceAdjustment] = useState(false)
+  const [isSavingPieceMinimums, setIsSavingPieceMinimums] = useState(false)
   const [isClosingDay, setIsClosingDay] = useState(false)
   const [isReopeningDay, setIsReopeningDay] = useState(false)
   const [previousPieceStockSource, setPreviousPieceStockSource] =
@@ -531,6 +576,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
 
       if (todayData) {
         const inventory = todayData as InventarioDiario
+        const minimumThresholds = getPieceMinimumThresholds(inventory)
 
         setTodayInventory(inventory)
         setPreviousPieceStockSource(
@@ -545,6 +591,13 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
         setNotasCierre(inventory.notas_cierre ?? "")
         setSelectedPieceAdjustment("alas")
         setPieceStockValue(String(getAllocatedPieceStock(inventory, "alas")))
+        setPieceMinimumInputs({
+          alas: String(minimumThresholds.alas),
+          piernas: String(minimumThresholds.piernas),
+          muslos: String(minimumThresholds.muslos),
+          pechugas_grandes: String(minimumThresholds.pechugas_grandes),
+          pechugas_chicas: String(minimumThresholds.pechugas_chicas),
+        })
         setPieceAdjustmentReason("")
         await loadTodayMovements(inventory.id)
         return
@@ -587,6 +640,13 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       }
       setConteoFisicoCierre("")
       setNotasCierre("")
+      setPieceMinimumInputs({
+        alas: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+        piernas: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+        muslos: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+        pechugas_grandes: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+        pechugas_chicas: String(DEFAULT_PIECE_MINIMUM_THRESHOLD),
+      })
       setPieceAdjustmentReason("")
     } catch (error) {
       console.error("Error al cargar inventario diario:", error)
@@ -672,6 +732,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       }
 
       const inventory = data as InventarioDiario
+      const minimumThresholds = getPieceMinimumThresholds(inventory)
       setTodayInventory(inventory)
       setPreviousPieceStockSource(
         hasPieceStockSource(inventory) ? getPieceStockAllocation(inventory) : null,
@@ -682,6 +743,13 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       setNotasCierre("")
       setSelectedPieceAdjustment("alas")
       setPieceStockValue(String(getAllocatedPieceStock(inventory, "alas")))
+      setPieceMinimumInputs({
+        alas: String(minimumThresholds.alas),
+        piernas: String(minimumThresholds.piernas),
+        muslos: String(minimumThresholds.muslos),
+        pechugas_grandes: String(minimumThresholds.pechugas_grandes),
+        pechugas_chicas: String(minimumThresholds.pechugas_chicas),
+      })
       setPieceAdjustmentReason("")
       onInventoryStarted?.()
       toast.success("Inventario del dia iniciado correctamente")
@@ -1022,6 +1090,77 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     }
   }
 
+  function handlePieceMinimumInputChange(pieceKey: InventoryPieceKey, value: string) {
+    setPieceMinimumInputs((current) => ({
+      ...current,
+      [pieceKey]: value,
+    }))
+  }
+
+  async function handleSavePieceMinimums() {
+    if (!todayInventory) {
+      return
+    }
+
+    if (!adminAccess.isAdmin) {
+      toast.error("Solo un administrador puede editar minimos por pieza")
+      return
+    }
+
+    const parsedMinimums = {} as PieceMinimumThresholds
+
+    for (const pieceKey of PIECE_KEYS) {
+      const parsed = parseNonNegativeInteger(pieceMinimumInputs[pieceKey] ?? "")
+
+      if (parsed == null) {
+        toast.error(`Minimo invalido para ${PIECE_LABELS[pieceKey]}`)
+        return
+      }
+
+      parsedMinimums[pieceKey] = parsed
+    }
+
+    const payload: InventarioDiarioUpdate = {
+      min_alas: parsedMinimums.alas,
+      min_piernas: parsedMinimums.piernas,
+      min_muslos: parsedMinimums.muslos,
+      min_pechugas_g: parsedMinimums.pechugas_grandes,
+      min_pechugas_c: parsedMinimums.pechugas_chicas,
+    }
+
+    try {
+      setIsSavingPieceMinimums(true)
+
+      const { data, error } = await supabase
+        .from("inventario_diario")
+        .update(payload)
+        .eq("id", todayInventory.id)
+        .select()
+        .single()
+
+      if (error) {
+        throw error
+      }
+
+      const inventory = data as InventarioDiario
+      const nextMinimumThresholds = getPieceMinimumThresholds(inventory)
+      setTodayInventory(inventory)
+      setPieceMinimumInputs({
+        alas: String(nextMinimumThresholds.alas),
+        piernas: String(nextMinimumThresholds.piernas),
+        muslos: String(nextMinimumThresholds.muslos),
+        pechugas_grandes: String(nextMinimumThresholds.pechugas_grandes),
+        pechugas_chicas: String(nextMinimumThresholds.pechugas_chicas),
+      })
+      toast.success("Minimos por pieza actualizados")
+    } catch (error) {
+      console.error("Error al guardar minimos por pieza:", error)
+      toast.error("No se pudieron guardar los minimos por pieza")
+    } finally {
+      setIsSavingPieceMinimums(false)
+    }
+  }
+
   async function handleReopenDay() {
     if (!todayInventory || !todayInventory.cerrado_en) {
       return
@@ -1234,6 +1373,11 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
 
   const stockDisponible = getStockFinalPieces(todayInventory)
   const pieceStockAllocation = getPieceStockAllocation(todayInventory)
+  const pieceMinimumThresholds = getPieceMinimumThresholds(todayInventory)
+  const lowStockPieces = PIECE_KEYS.filter(
+    (pieceKey) => pieceStockAllocation[pieceKey] < pieceMinimumThresholds[pieceKey],
+  )
+  const hasLowStockPieces = lowStockPieces.length > 0
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
   const canUseAdminAdjustments = adminAccess.isAdmin
@@ -1289,6 +1433,22 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
           </h3>
           <p className="mt-2 text-sm text-emerald-800">
             Cerrado el {formatInventoryDateTime(todayInventory.cerrado_en)}. Ya no deberias registrar movimientos operativos hasta reabrir el dia.
+          </p>
+        </div>
+      ) : null}
+
+      {hasLowStockPieces ? (
+        <div className="mt-5 rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3.5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-700">
+            Alerta de bajo stock
+          </p>
+          <p className="mt-1.5 text-sm font-semibold text-rose-900">
+            {lowStockPieces
+              .map(
+                (pieceKey) =>
+                  `${PIECE_LABELS[pieceKey]} (${pieceStockAllocation[pieceKey]}/${pieceMinimumThresholds[pieceKey]})`,
+              )
+              .join(", ")}
           </p>
         </div>
       ) : null}
@@ -1358,6 +1518,54 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[2rem] bg-slate-50 p-4 sm:p-5">
+        {canUseAdminAdjustments ? (
+          <section className="mb-4 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h4 className="text-base font-black text-slate-900">
+                  Minimos por pieza
+                </h4>
+                <p className="mt-1 text-sm text-slate-500">
+                  Define alertas minimas para el dia actual.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleSavePieceMinimums()}
+                disabled={isSavingPieceMinimums}
+                className="rounded-2xl bg-slate-900 px-4 py-2.5 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                {isSavingPieceMinimums ? "Guardando..." : "Guardar minimos"}
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-5">
+              {PIECE_KEYS.map((pieceKey) => (
+                <div key={pieceKey}>
+                  <label
+                    htmlFor={`piece-min-${pieceKey}`}
+                    className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500"
+                  >
+                    {PIECE_LABELS[pieceKey]}
+                  </label>
+                  <input
+                    id={`piece-min-${pieceKey}`}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={pieceMinimumInputs[pieceKey]}
+                    onChange={(event) =>
+                      handlePieceMinimumInputChange(pieceKey, event.target.value)
+                    }
+                    disabled={isSavingPieceMinimums}
+                    className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-base font-black text-slate-900 outline-none transition focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
@@ -1722,17 +1930,22 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
         <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {PIECE_KEYS.map((pieceKey) => {
             const stock = pieceStockAllocation[pieceKey]
+            const minimum = pieceMinimumThresholds[pieceKey]
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
             const mermas = todayInventory[MERMA_FIELD_MAP[pieceKey]] ?? 0
             const ajustes = todayInventory[AJUSTE_FIELD_MAP[pieceKey]] ?? 0
-            const isLowStock = stock < 5
+            const isLowStock = stock < minimum
             const isSelected = canUseAdminAdjustments && selectedPieceAdjustment === pieceKey
 
             return (
               <article
                 key={pieceKey}
                 className={`rounded-3xl border bg-white p-3.5 shadow-sm transition ${
-                  isSelected ? "border-slate-900 ring-2 ring-slate-200" : "border-slate-200"
+                  isSelected
+                    ? "border-slate-900 ring-2 ring-slate-200"
+                    : isLowStock
+                      ? "border-rose-300"
+                      : "border-slate-200"
                 }`}
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1773,6 +1986,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
                   </div>
                 </div>
                 <div className="mt-2.5 space-y-1 text-[11px] text-slate-500 sm:text-xs">
+                  <p>Minimo: {minimum}</p>
                   <p>Ventas: {ventas}</p>
                   <p>Mermas: {mermas}</p>
                   <p>Ajustes: {formatSignedMetric(ajustes)}</p>

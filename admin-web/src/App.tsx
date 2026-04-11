@@ -31,6 +31,7 @@ import { sendDispatchPushNotification } from "./lib/push"
 import { supabase } from "./lib/supabase"
 import type {
   Cliente,
+  InventarioDiario,
   PedidoInsert,
   Producto,
   RegistrarVentaPosResult,
@@ -98,6 +99,43 @@ const MERMA_TO_PIECE_MAP: Record<string, InventoryPieceKey> = {
 }
 
 const ALL_PIECE_KEYS = Object.keys(PIECE_LABELS) as InventoryPieceKey[]
+const DEFAULT_PIECE_MINIMUM_THRESHOLD = 5
+
+const PIECE_STOCK_FIELD_MAP: Record<
+  InventoryPieceKey,
+  keyof Pick<
+    InventarioDiario,
+    | "stock_alas"
+    | "stock_piernas"
+    | "stock_muslos"
+    | "stock_pechugas_g"
+    | "stock_pechugas_c"
+  >
+> = {
+  alas: "stock_alas",
+  piernas: "stock_piernas",
+  muslos: "stock_muslos",
+  pechugas_grandes: "stock_pechugas_g",
+  pechugas_chicas: "stock_pechugas_c",
+}
+
+const PIECE_MIN_FIELD_MAP: Record<
+  InventoryPieceKey,
+  keyof Pick<
+    InventarioDiario,
+    | "min_alas"
+    | "min_piernas"
+    | "min_muslos"
+    | "min_pechugas_g"
+    | "min_pechugas_c"
+  >
+> = {
+  alas: "min_alas",
+  piernas: "min_piernas",
+  muslos: "min_muslos",
+  pechugas_grandes: "min_pechugas_g",
+  pechugas_chicas: "min_pechugas_c",
+}
 
 function isInventoryPieceKey(value: unknown): value is InventoryPieceKey {
   return (
@@ -500,6 +538,7 @@ function App() {
   const [todayIsoDate, setTodayIsoDate] = useState(getTodayLocalISODate())
   const [isInventoryReadyForToday, setIsInventoryReadyForToday] =
     useState<boolean>(true)
+  const [lowStockPieceNames, setLowStockPieceNames] = useState<string[]>([])
   const [isCheckingInventoryStatus, setIsCheckingInventoryStatus] =
     useState<boolean>(true)
   const [isPosAdminPanelOpen, setIsPosAdminPanelOpen] = useState(false)
@@ -529,7 +568,9 @@ function App() {
 
       const { data, error } = await supabase
         .from("inventario_diario")
-        .select("id")
+        .select(
+          "id,stock_alas,stock_piernas,stock_muslos,stock_pechugas_g,stock_pechugas_c,min_alas,min_piernas,min_muslos,min_pechugas_g,min_pechugas_c",
+        )
         .eq("fecha", targetDate)
         .maybeSingle()
 
@@ -537,10 +578,33 @@ function App() {
         throw error
       }
 
-      setIsInventoryReadyForToday(Boolean(data?.id))
+      if (!data?.id) {
+        setIsInventoryReadyForToday(false)
+        setLowStockPieceNames([])
+        return
+      }
+
+      const inventory = data as InventarioDiario
+      setIsInventoryReadyForToday(true)
+
+      const lowStock = ALL_PIECE_KEYS.filter((pieceKey) => {
+        const stockField = PIECE_STOCK_FIELD_MAP[pieceKey]
+        const minField = PIECE_MIN_FIELD_MAP[pieceKey]
+        const stockValue =
+          typeof inventory[stockField] === "number" ? Math.round(inventory[stockField]) : 0
+        const minValue =
+          typeof inventory[minField] === "number"
+            ? Math.max(0, Math.round(inventory[minField]))
+            : DEFAULT_PIECE_MINIMUM_THRESHOLD
+
+        return stockValue < minValue
+      }).map((pieceKey) => PIECE_LABELS[pieceKey])
+
+      setLowStockPieceNames(lowStock)
     } catch (error) {
       console.error("Error al validar inventario del dia:", error)
       setIsInventoryReadyForToday(true)
+      setLowStockPieceNames([])
     } finally {
       setIsCheckingInventoryStatus(false)
     }
@@ -1289,6 +1353,17 @@ function handleManualPieceSelectionChange(
                 Ir a inventario
               </button>
             </div>
+          </section>
+        ) : null}
+
+        {activeTab === "POS" && !isCheckingInventoryStatus && isInventoryReadyForToday && lowStockPieceNames.length > 0 ? (
+          <section className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 shadow-sm sm:px-4 sm:py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
+              Bajo stock
+            </p>
+            <p className="mt-1 text-xs font-medium text-rose-900 sm:text-sm">
+              {lowStockPieceNames.join(", ")}
+            </p>
           </section>
         ) : null}
 

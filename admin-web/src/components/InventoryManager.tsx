@@ -18,6 +18,7 @@ import type {
 
 type MermaType = "caidos" | "quemados"
 type OperationTab = "proveedor" | "mermas" | "ajustes"
+type PieceStockAllocation = Record<InventoryPieceKey, number>
 const TOTAL_PIEZAS_POR_POLLO = Object.values(PIEZAS_POR_POLLO).reduce(
   (total, value) => total + value,
   0,
@@ -79,12 +80,45 @@ const AJUSTE_FIELD_MAP: Record<
   pechugas_chicas: "ajustes_pechugas_c",
 }
 
+const PIECE_STOCK_FIELD_MAP: Record<
+  InventoryPieceKey,
+  keyof Pick<
+    InventarioDiario,
+    | "stock_alas"
+    | "stock_piernas"
+    | "stock_muslos"
+    | "stock_pechugas_g"
+    | "stock_pechugas_c"
+  >
+> = {
+  alas: "stock_alas",
+  piernas: "stock_piernas",
+  muslos: "stock_muslos",
+  pechugas_grandes: "stock_pechugas_g",
+  pechugas_chicas: "stock_pechugas_c",
+}
+
 function getTodayLocalISODate() {
   return getTodayDateKey()
 }
 
 function getTotalEnParrilla(inventario: InventarioDiario) {
   return (inventario.stock_anterior ?? 0) + (inventario.nuevos_ingresos ?? 0)
+}
+
+function getPieceStockSourceTotal(inventario: InventarioDiario) {
+  return PIECE_KEYS.reduce((total, pieceKey) => {
+    const stockField = PIECE_STOCK_FIELD_MAP[pieceKey]
+    const stockValue = inventario[stockField]
+    return total + (typeof stockValue === "number" ? Math.round(stockValue) : 0)
+  }, 0)
+}
+
+function hasPieceStockSource(inventario: InventarioDiario) {
+  return PIECE_KEYS.every((pieceKey) => {
+    const stockField = PIECE_STOCK_FIELD_MAP[pieceKey]
+    return typeof inventario[stockField] === "number"
+  })
 }
 
 function getInventorySoldPieces(inventario: InventarioDiario) {
@@ -127,6 +161,10 @@ function getInventoryAdminAdjustmentPieces(inventario: InventarioDiario) {
 }
 
 function getStockFinalPieces(inventario: InventarioDiario) {
+  if (hasPieceStockSource(inventario)) {
+    return getPieceStockSourceTotal(inventario)
+  }
+
   if (typeof inventario.stock_final === "number") {
     return inventario.stock_final
   }
@@ -140,7 +178,7 @@ function getStockFinalPieces(inventario: InventarioDiario) {
 }
 
 function formatMetric(value: number) {
-  return Number.isInteger(value) ? value.toString() : value.toFixed(2)
+  return Math.round(value).toString()
 }
 
 function formatSignedMetric(value: number) {
@@ -165,7 +203,7 @@ function formatInventoryDateTime(value: string | null) {
   return formatDateTime(value)
 }
 
-function getPieceStockEstimate(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
+function getPieceStockEstimateLegacy(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
   const totalPiezas = getTotalEnParrilla(inventario)
   const ventasField = PIECE_FIELD_MAP[pieceKey]
   const mermasField = MERMA_FIELD_MAP[pieceKey]
@@ -189,7 +227,7 @@ function getBalancedPieceStockAllocation(inventario: InventarioDiario) {
     number
   >
   const estimates = PIECE_KEYS.map((pieceKey, index) => {
-    const exact = getPieceStockEstimate(inventario, pieceKey)
+    const exact = getPieceStockEstimateLegacy(inventario, pieceKey)
     const floorValue = Math.floor(exact)
 
     allocation[pieceKey] = floorValue
@@ -227,8 +265,69 @@ function getBalancedPieceStockAllocation(inventario: InventarioDiario) {
   return allocation
 }
 
+function getPieceStockAllocation(inventario: InventarioDiario) {
+  if (hasPieceStockSource(inventario)) {
+    return Object.fromEntries(
+      PIECE_KEYS.map((pieceKey) => {
+        const stockField = PIECE_STOCK_FIELD_MAP[pieceKey]
+        return [pieceKey, Math.round((inventario[stockField] as number) ?? 0)]
+      }),
+    ) as Record<InventoryPieceKey, number>
+  }
+
+  return getBalancedPieceStockAllocation(inventario)
+}
+
 function getAllocatedPieceStock(inventario: InventarioDiario, pieceKey: InventoryPieceKey) {
-  return getBalancedPieceStockAllocation(inventario)[pieceKey]
+  return getPieceStockAllocation(inventario)[pieceKey]
+}
+
+function allocateEvenPieces(totalPieces: number) {
+  const base = Math.floor(totalPieces / PIECE_KEYS.length)
+  const remainder = totalPieces % PIECE_KEYS.length
+  const allocation = Object.fromEntries(PIECE_KEYS.map((pieceKey) => [pieceKey, base])) as Record<
+    InventoryPieceKey,
+    number
+  >
+
+  for (let index = 0; index < remainder; index += 1) {
+    allocation[PIECE_KEYS[index]] += 1
+  }
+
+  return allocation
+}
+
+function allocateEvenPiecesWithSign(deltaPieces: number) {
+  const sign = deltaPieces >= 0 ? 1 : -1
+  const allocation = allocateEvenPieces(Math.abs(deltaPieces))
+
+  for (const pieceKey of PIECE_KEYS) {
+    allocation[pieceKey] *= sign
+  }
+
+  return allocation
+}
+
+function getStockSourcePayloadFromAllocation(allocation: PieceStockAllocation) {
+  return {
+    stock_alas: allocation.alas,
+    stock_piernas: allocation.piernas,
+    stock_muslos: allocation.muslos,
+    stock_pechugas_g: allocation.pechugas_grandes,
+    stock_pechugas_c: allocation.pechugas_chicas,
+  }
+}
+
+function getStockSourceDeltaPayload(deltaPieces: number) {
+  const allocation = allocateEvenPiecesWithSign(deltaPieces)
+
+  return {
+    stock_alas: allocation.alas,
+    stock_piernas: allocation.piernas,
+    stock_muslos: allocation.muslos,
+    stock_pechugas_g: allocation.pechugas_grandes,
+    stock_pechugas_c: allocation.pechugas_chicas,
+  }
 }
 
 function parseNonNegativeInteger(value: string) {
@@ -356,6 +455,8 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
   const [isSavingPieceAdjustment, setIsSavingPieceAdjustment] = useState(false)
   const [isClosingDay, setIsClosingDay] = useState(false)
   const [isReopeningDay, setIsReopeningDay] = useState(false)
+  const [previousPieceStockSource, setPreviousPieceStockSource] =
+    useState<PieceStockAllocation | null>(null)
 
   const loadAdminAccess = useCallback(async () => {
     try {
@@ -431,6 +532,9 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
         const inventory = todayData as InventarioDiario
 
         setTodayInventory(inventory)
+        setPreviousPieceStockSource(
+          hasPieceStockSource(inventory) ? getPieceStockAllocation(inventory) : null,
+        )
         setStockAnterior(inventory.stock_anterior ?? 0)
         setConteoFisicoCierre(
           typeof inventory.conteo_fisico_cierre === "number"
@@ -447,7 +551,9 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
 
       const { data: previousData, error: previousError } = await supabase
         .from("inventario_diario")
-        .select("stock_final")
+        .select(
+          "stock_final,stock_alas,stock_piernas,stock_muslos,stock_pechugas_g,stock_pechugas_c",
+        )
         .lt("fecha", today)
         .order("fecha", { ascending: false })
         .limit(1)
@@ -460,6 +566,24 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       setTodayInventory(null)
       setTodayMovements([])
       setStockAnterior(previousData?.stock_final ?? 0)
+      if (
+        previousData &&
+        typeof previousData.stock_alas === "number" &&
+        typeof previousData.stock_piernas === "number" &&
+        typeof previousData.stock_muslos === "number" &&
+        typeof previousData.stock_pechugas_g === "number" &&
+        typeof previousData.stock_pechugas_c === "number"
+      ) {
+        setPreviousPieceStockSource({
+          alas: previousData.stock_alas,
+          piernas: previousData.stock_piernas,
+          muslos: previousData.stock_muslos,
+          pechugas_grandes: previousData.stock_pechugas_g,
+          pechugas_chicas: previousData.stock_pechugas_c,
+        })
+      } else {
+        setPreviousPieceStockSource(null)
+      }
       setConteoFisicoCierre("")
       setNotasCierre("")
       setPieceAdjustmentReason("")
@@ -493,6 +617,19 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     try {
       setIsStartingDay(true)
 
+      const stockBaseAllocation =
+        previousPieceStockSource ?? allocateEvenPieces(stockAnterior)
+      const newIngressAllocation = allocateEvenPieces(nuevosIngresosValue)
+      const nextStockAllocation = {
+        alas: stockBaseAllocation.alas + newIngressAllocation.alas,
+        piernas: stockBaseAllocation.piernas + newIngressAllocation.piernas,
+        muslos: stockBaseAllocation.muslos + newIngressAllocation.muslos,
+        pechugas_grandes:
+          stockBaseAllocation.pechugas_grandes + newIngressAllocation.pechugas_grandes,
+        pechugas_chicas:
+          stockBaseAllocation.pechugas_chicas + newIngressAllocation.pechugas_chicas,
+      }
+
       const payload: InventarioDiarioInsert = {
         fecha: getTodayLocalISODate(),
         stock_anterior: stockAnterior,
@@ -520,6 +657,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
         diferencia_cierre: null,
         notas_cierre: null,
         cerrado_en: null,
+        ...getStockSourcePayloadFromAllocation(nextStockAllocation),
       }
 
       const { data, error } = await supabase
@@ -534,6 +672,9 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
 
       const inventory = data as InventarioDiario
       setTodayInventory(inventory)
+      setPreviousPieceStockSource(
+        hasPieceStockSource(inventory) ? getPieceStockAllocation(inventory) : null,
+      )
       setTodayMovements([])
       setNuevosIngresos("")
       setConteoFisicoCierre("")
@@ -580,9 +721,32 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     try {
       setIsSavingIngreso(true)
 
+      const stockSourceDelta = getStockSourceDeltaPayload(ingresosValue - devolucionValue)
+      const nextStockByPiece = {
+        alas: (todayInventory.stock_alas ?? 0) + stockSourceDelta.stock_alas,
+        piernas: (todayInventory.stock_piernas ?? 0) + stockSourceDelta.stock_piernas,
+        muslos: (todayInventory.stock_muslos ?? 0) + stockSourceDelta.stock_muslos,
+        pechugas_grandes:
+          (todayInventory.stock_pechugas_g ?? 0) + stockSourceDelta.stock_pechugas_g,
+        pechugas_chicas:
+          (todayInventory.stock_pechugas_c ?? 0) + stockSourceDelta.stock_pechugas_c,
+      }
+
+      if (Object.values(nextStockByPiece).some((value) => value < 0)) {
+        toast.error("La devolucion excede el stock actual por pieza")
+        return
+      }
+
       const { data, error } = await supabase
         .from("inventario_diario")
-        .update({ nuevos_ingresos: nextNuevosIngresos })
+        .update({
+          nuevos_ingresos: nextNuevosIngresos,
+          stock_alas: nextStockByPiece.alas,
+          stock_piernas: nextStockByPiece.piernas,
+          stock_muslos: nextStockByPiece.muslos,
+          stock_pechugas_g: nextStockByPiece.pechugas_grandes,
+          stock_pechugas_c: nextStockByPiece.pechugas_chicas,
+        })
         .eq("id", todayInventory.id)
         .select()
         .single()
@@ -661,10 +825,12 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     const generalField =
       mermaType === "quemados" ? "mermas_quemados" : "mermas_caidos"
     const pieceField = MERMA_FIELD_MAP[mermaPiece]
+    const stockField = PIECE_STOCK_FIELD_MAP[mermaPiece]
 
     const payload: InventarioDiarioUpdate = {
       [generalField]: (todayInventory[generalField] ?? 0) + mermaValue,
       [pieceField]: (todayInventory[pieceField] ?? 0) + mermaValue,
+      [stockField]: Math.max(0, (todayInventory[stockField] ?? 0) - mermaValue),
     }
 
     try {
@@ -759,12 +925,14 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
     }
 
     const ajusteField = AJUSTE_FIELD_MAP[selectedPieceAdjustment]
+    const stockField = PIECE_STOCK_FIELD_MAP[selectedPieceAdjustment]
     const nextPieceAdjustment = Math.round(todayInventory[ajusteField] ?? 0) + deltaPieces
     const nextAdminAdjustment = Math.round(todayInventory.ajustes_admin ?? 0) + deltaPieces
 
     const payload: InventarioDiarioUpdate = {
       [ajusteField]: nextPieceAdjustment,
       ajustes_admin: nextAdminAdjustment,
+      [stockField]: targetStockValue,
     }
 
     try {
@@ -795,11 +963,11 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
         },
       ])
 
-        const inventory = data as InventarioDiario
-        setTodayInventory(inventory)
-        setPieceStockValue(
-          String(getAllocatedPieceStock(inventory, selectedPieceAdjustment)),
-        )
+      const inventory = data as InventarioDiario
+      setTodayInventory(inventory)
+      setPieceStockValue(
+        String(getAllocatedPieceStock(inventory, selectedPieceAdjustment)),
+      )
       setPieceAdjustmentReason("")
       await syncInventoryMovements(todayInventory.id)
       toast.success("Stock ajustado para " + PIECE_LABELS[selectedPieceAdjustment])
@@ -998,7 +1166,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
   }
 
   const stockDisponible = getStockFinalPieces(todayInventory)
-  const pieceStockAllocation = getBalancedPieceStockAllocation(todayInventory)
+  const pieceStockAllocation = getPieceStockAllocation(todayInventory)
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
   const canUseAdminAdjustments = adminAccess.isAdmin
@@ -1478,12 +1646,10 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
               Inventario por pieza
             </p>
             <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
-              Stock estimado por pieza
+              Stock por pieza
             </h3>
           </div>
-          <p className="text-sm text-slate-500">
-            Formula: ((stock anterior + nuevos ingresos) x piezas base de cada corte / 10) - ventas - mermas + ajustes
-          </p>
+          <p className="text-sm text-slate-500">Fuente principal: stock_* por pieza (entero).</p>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

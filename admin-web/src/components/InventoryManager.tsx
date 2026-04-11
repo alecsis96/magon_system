@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import {
   PIECE_LABELS,
@@ -998,10 +998,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
   }
 
   const stockDisponible = getStockFinalPieces(todayInventory)
-  const pieceStockAllocation = useMemo(
-    () => getBalancedPieceStockAllocation(todayInventory),
-    [todayInventory],
-  )
+  const pieceStockAllocation = getBalancedPieceStockAllocation(todayInventory)
   const conciliacion = todayInventory.diferencia_cierre
   const isClosed = Boolean(todayInventory.cerrado_en)
   const canUseAdminAdjustments = adminAccess.isAdmin

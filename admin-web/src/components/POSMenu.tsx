@@ -141,8 +141,8 @@ export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
     <section className="min-h-full rounded-[2rem] bg-gray-50 px-4 py-4 text-gray-900 sm:px-5 sm:py-5 lg:px-6">
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-col gap-3 sm:mb-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-gray-500">
                 Punto de venta
               </p>
@@ -151,13 +151,12 @@ export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
               </h1>
             </div>
 
-            <div className="flex items-start justify-between gap-3 sm:items-end">
-              <p className="max-w-lg text-[11px] text-gray-500 sm:text-sm">
-                Selecciona un producto para agregarlo al pedido.
-              </p>
-              {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
-            </div>
+            {headerAction ? <div className="shrink-0 self-start">{headerAction}</div> : null}
           </div>
+
+          <p className="max-w-lg text-[11px] text-gray-500 sm:text-sm">
+            Selecciona un producto para agregarlo al pedido.
+          </p>
 
           <div className="flex flex-wrap gap-2">
             <FilterButton active={activeFilter === "todos"} label="Todos" onClick={() => setActiveFilter("todos")} />

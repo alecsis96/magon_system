@@ -17,6 +17,7 @@ type OrderWithClient = Pedido & {
 }
 
 type MonitorView = "active" | "history"
+type HistoryDayFilter = "today" | "yesterday" | "7d" | "15d" | "30d" | "all"
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -38,6 +39,52 @@ const HISTORY_ORDER_STATUSES = [
   "rechazado",
   "devuelto",
 ]
+
+const HISTORY_DAY_FILTER_OPTIONS: Array<{ value: HistoryDayFilter; label: string }> = [
+  { value: "today", label: "Hoy" },
+  { value: "yesterday", label: "Ayer" },
+  { value: "7d", label: "7d" },
+  { value: "15d", label: "15d" },
+  { value: "30d", label: "30d" },
+  { value: "all", label: "Todo" },
+]
+
+function getDayFilterBounds(filter: HistoryDayFilter) {
+  const now = new Date()
+
+  if (filter === "all") {
+    return { from: null, to: null }
+  }
+
+  if (filter === "today") {
+    const startOfToday = new Date(now)
+    startOfToday.setHours(0, 0, 0, 0)
+    return { from: startOfToday.toISOString(), to: now.toISOString() }
+  }
+
+  if (filter === "yesterday") {
+    const startOfYesterday = new Date(now)
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+    startOfYesterday.setHours(0, 0, 0, 0)
+
+    const endOfYesterday = new Date(startOfYesterday)
+    endOfYesterday.setHours(23, 59, 59, 999)
+
+    return {
+      from: startOfYesterday.toISOString(),
+      to: endOfYesterday.toISOString(),
+    }
+  }
+
+  const rollingDays = Number.parseInt(filter.replace("d", ""), 10)
+  const rollingStart = new Date(now)
+  rollingStart.setDate(rollingStart.getDate() - rollingDays)
+
+  return {
+    from: rollingStart.toISOString(),
+    to: now.toISOString(),
+  }
+}
 
 function formatOrderType(tipoPedido: Pedido["tipo_pedido"]) {
   return tipoPedido === "domicilio" ? "Domicilio" : "Mostrador"
@@ -158,6 +205,7 @@ export function OrdersMonitor() {
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
   const [openActionsMenuOrderId, setOpenActionsMenuOrderId] = useState<string | null>(null)
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
+  const [historyDayFilter, setHistoryDayFilter] = useState<HistoryDayFilter>("30d")
 
   async function refreshAdminAccess() {
     try {
@@ -199,18 +247,30 @@ export function OrdersMonitor() {
     }
   }
 
-  async function loadHistoryOrders(showLoader = true) {
+  async function loadHistoryOrders(showLoader = true, dayFilter = historyDayFilter) {
     try {
       if (showLoader) {
         setIsLoadingHistory(true)
       }
 
-      const { data, error } = await supabase
+      const { from, to } = getDayFilterBounds(dayFilter)
+
+      let historyQuery = supabase
         .from("pedidos")
         .select(
           "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4)",
         )
         .in("estado", HISTORY_ORDER_STATUSES)
+
+      if (from) {
+        historyQuery = historyQuery.gte("fecha_creacion", from)
+      }
+
+      if (to) {
+        historyQuery = historyQuery.lte("fecha_creacion", to)
+      }
+
+      const { data, error } = await historyQuery
         .order("fecha_creacion", { ascending: false })
         .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
 
@@ -243,6 +303,10 @@ export function OrdersMonitor() {
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    void loadHistoryOrders()
+  }, [historyDayFilter])
 
   useEffect(() => {
     setOpenActionsMenuOrderId(null)
@@ -487,6 +551,32 @@ export function OrdersMonitor() {
       </div>
 
       <div className="mt-6">
+        {view === "history" ? (
+          <div className="mb-4 overflow-x-auto pb-1">
+            <div className="flex min-w-max items-center gap-2">
+              {HISTORY_DAY_FILTER_OPTIONS.map((filterOption) => {
+                const isActive = historyDayFilter === filterOption.value
+
+                return (
+                  <button
+                    key={filterOption.value}
+                    type="button"
+                    onClick={() => setHistoryDayFilter(filterOption.value)}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-4 ${
+                      isActive
+                        ? "border-slate-900 bg-slate-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)] focus:ring-slate-200"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 focus:ring-slate-100"
+                    }`}
+                    aria-pressed={isActive}
+                  >
+                    {filterOption.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {isLoading ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-medium text-slate-500">
             {view === "active"

@@ -265,7 +265,7 @@ function OperationTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-2xl px-4 py-2.5 text-sm font-black transition focus:outline-none focus:ring-4 focus:ring-slate-200 ${
+      className={`inline-flex min-h-11 items-center justify-center rounded-2xl px-4 py-2.5 text-center text-sm font-black leading-tight transition focus:outline-none focus:ring-4 focus:ring-slate-200 ${
         active
           ? "bg-slate-900 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)]"
           : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
@@ -1091,7 +1091,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
               Proveedor y mermas para operacion diaria. El ajuste fino de stock queda reservado para admin.
             </p>
           </div>
-          <div className={`grid grid-cols-1 gap-2 ${canUseAdminAdjustments ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+          <div className="mt-1 flex w-full flex-wrap gap-2 lg:mt-0 lg:w-auto lg:justify-end">
             <OperationTabButton
               active={activeOperationTab === "proveedor"}
               label="Proveedor"
@@ -1442,7 +1442,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
           </p>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {(Object.keys(PIECE_LABELS) as InventoryPieceKey[]).map((pieceKey) => {
             const stock = getPieceStock(todayInventory, pieceKey)
             const ventas = todayInventory[PIECE_FIELD_MAP[pieceKey]] ?? 0
@@ -1458,7 +1458,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
                   isSelected ? "border-slate-900 ring-2 ring-slate-200" : "border-slate-200"
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       {PIECE_LABELS[pieceKey]}
@@ -1467,7 +1467,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
                       {formatMetric(stock)}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
                     {isLowStock ? (
                       <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-rose-600">
                         Bajo Stock
@@ -1478,7 +1478,7 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
                         type="button"
                         onClick={() => openPieceAdjustment(pieceKey)}
                         aria-label={`Ajustar ${PIECE_LABELS[pieceKey]}`}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition focus:outline-none focus:ring-4 focus:ring-slate-100 sm:px-3 sm:text-xs ${
+                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full transition focus:outline-none focus:ring-4 focus:ring-slate-100 ${
                           isSelected
                             ? "bg-slate-900 text-white"
                             : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"

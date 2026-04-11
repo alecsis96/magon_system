@@ -32,6 +32,13 @@ export type ModoDescuentoInventario =
   | "manual"
   | "fijo_por_pieza"
   | (string & {});
+export type AuditoriaModulo =
+  | "inventario"
+  | "productos"
+  | "pedidos"
+  | "contabilidad"
+  | "clientes"
+  | "sistema";
 export interface Producto extends Record<string, unknown> {
   id: UUID;
   nombre: string;
@@ -501,6 +508,39 @@ export interface RepartidorPushTokenUpdate extends Record<string, unknown> {
   creado_en?: ISODateTimeString | null;
   actualizado_en?: ISODateTimeString | null;
 }
+export interface AuditoriaEvento extends Record<string, unknown> {
+  id: UUID;
+  creado_en: ISODateTimeString;
+  actor_uid: UUID | null;
+  actor_email: string | null;
+  modulo: AuditoriaModulo | (string & {});
+  accion: string;
+  entidad: string;
+  entidad_id: string | null;
+  detalle: Json;
+}
+export interface AuditoriaEventoInsert extends Record<string, unknown> {
+  id?: UUID;
+  creado_en?: ISODateTimeString;
+  actor_uid?: UUID | null;
+  actor_email?: string | null;
+  modulo: AuditoriaModulo | (string & {});
+  accion: string;
+  entidad: string;
+  entidad_id?: string | null;
+  detalle?: Json;
+}
+export interface AuditoriaEventoUpdate extends Record<string, unknown> {
+  id?: UUID;
+  creado_en?: ISODateTimeString;
+  actor_uid?: UUID | null;
+  actor_email?: string | null;
+  modulo?: AuditoriaModulo | (string & {});
+  accion?: string;
+  entidad?: string;
+  entidad_id?: string | null;
+  detalle?: Json;
+}
 export interface RegistrarVentaPosResult extends Record<string, unknown> {
   pedido_id: UUID;
   folio: string | null;
@@ -552,8 +592,10 @@ export interface PrintableOrderRpc extends Record<string, unknown> {
 }
 export interface EliminarPedidoAdminResult extends Record<string, unknown> {
   pedido_id: UUID;
-  inventory_id: UUID;
+  inventory_id: UUID | null;
   ok: boolean;
+  reversion_inventario_aplicada?: boolean;
+  motivo_reversion_inventario?: string | null;
   piezas_revertidas: {
     total: number;
     alas: number;
@@ -578,6 +620,12 @@ export interface Database {
         Row: CierreCaja;
         Insert: CierreCajaInsert;
         Update: CierreCajaUpdate;
+        Relationships: [];
+      };
+      auditoria_eventos: {
+        Row: AuditoriaEvento;
+        Insert: AuditoriaEventoInsert;
+        Update: AuditoriaEventoUpdate;
         Relationships: [];
       };
       egresos: {
@@ -748,6 +796,16 @@ export interface Database {
           p_inventory_id: UUID;
         };
         Returns: InventarioDiario;
+      };
+      registrar_evento_auditoria: {
+        Args: {
+          p_modulo: AuditoriaModulo | string;
+          p_accion: string;
+          p_entidad: string;
+          p_entidad_id?: string | null;
+          p_detalle?: Json;
+        };
+        Returns: UUID;
       };
     };
     Enums: Record<string, never>;

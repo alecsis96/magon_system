@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
+import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
 import { formatDateTime } from "../lib/datetime"
 import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
@@ -484,6 +485,25 @@ export function OrdersMonitor() {
             : "Pedido eliminado",
         )
       }
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "pedidos",
+        accion: "pedido_eliminado_admin",
+        entidad: "pedidos",
+        entidadId: order.id,
+        detalle: {
+          fuente: sourceView,
+          tipo_pedido: order.tipo_pedido,
+          total: order.total,
+          estado_previo: order.estado,
+          estado_pago_previo: order.estado_pago,
+          cliente: order.clientes?.nombre ?? null,
+          reversion_inventario_aplicada:
+            result?.reversion_inventario_aplicada ?? true,
+          motivo_reversion_inventario:
+            result?.motivo_reversion_inventario ?? null,
+        },
+      })
     } catch (error) {
       console.error("Error al eliminar el pedido:", error)
       toast.error("No se pudo eliminar el pedido")

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Toaster, toast } from "react-hot-toast"
 import { AccountingDashboard } from "./components/AccountingDashboard"
 import { AdminClientes } from "./components/AdminClientes"
+import { AuditLog } from "./components/AuditLog"
 import { OptionalCheckoutCustomerPicker } from "./components/OptionalCheckoutCustomerPicker"
 import { CustomerSelector } from "./components/CustomerSelector"
 import { InventoryManager } from "./components/InventoryManager"
@@ -72,7 +73,12 @@ type CartItem = {
 }
 
 type PrimaryTab = "POS" | "MONITOR"
-type SecondaryTab = "INVENTARIO" | "PRODUCTOS" | "CONTABILIDAD" | "CLIENTES"
+type SecondaryTab =
+  | "INVENTARIO"
+  | "PRODUCTOS"
+  | "CONTABILIDAD"
+  | "CLIENTES"
+  | "AUDITORIA"
 type AppTab = PrimaryTab | SecondaryTab
 
 const MERMA_OPTIONS = [
@@ -1129,6 +1135,7 @@ function handleManualPieceSelectionChange(
     activeTab === "PRODUCTOS" ||
     activeTab === "CONTABILIDAD" ||
     activeTab === "CLIENTES" ||
+    activeTab === "AUDITORIA" ||
     isMoreMenuOpen
   const adminAvatarRingClass = adminAccess.isAdmin
     ? "ring-emerald-500"
@@ -1759,6 +1766,8 @@ function handleManualPieceSelectionChange(
           />
         ) : activeTab === "CONTABILIDAD" ? (
           <AccountingDashboard />
+        ) : activeTab === "AUDITORIA" ? (
+          <AuditLog />
         ) : (
           <ProductCatalogManager />
         )}
@@ -1771,6 +1780,7 @@ function handleManualPieceSelectionChange(
             { id: "PRODUCTOS", label: "Productos" },
             { id: "CONTABILIDAD", label: "Contabilidad" },
             { id: "CLIENTES", label: "Clientes" },
+            { id: "AUDITORIA", label: "Auditoria" },
           ] as const).map((tab) => {
             const isActive = activeTab === tab.id
 

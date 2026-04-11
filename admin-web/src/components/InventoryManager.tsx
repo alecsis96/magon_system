@@ -6,6 +6,7 @@ import {
   type InventoryPieceKey,
 } from "../constants/inventory"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
+import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
 import { formatDateTime, getTodayDateKey } from "../lib/datetime"
 import { supabase } from "../lib/supabase"
 import type {
@@ -797,6 +798,19 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       } else {
         toast.success("Devolucion al proveedor registrada")
       }
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "inventario",
+        accion: "movimiento_proveedor_registrado",
+        entidad: "inventario_diario",
+        entidadId: inventory.id,
+        detalle: {
+          fecha: inventory.fecha,
+          ingreso_piezas: ingresosValue,
+          devolucion_piezas: devolucionValue,
+          nuevos_ingresos_total: inventory.nuevos_ingresos,
+        },
+      })
     } catch (error) {
       console.error("Error al registrar el movimiento de ingreso:", error)
       toast.error("No se pudo guardar el movimiento del proveedor")
@@ -870,6 +884,20 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       setMermaReason("")
       await syncInventoryMovements(todayInventory.id)
       toast.success("Merma registrada correctamente")
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "inventario",
+        accion: "merma_registrada",
+        entidad: "inventario_diario",
+        entidadId: inventory.id,
+        detalle: {
+          fecha: inventory.fecha,
+          tipo: mermaType,
+          pieza: mermaPiece,
+          cantidad_piezas: mermaValue,
+          motivo: mermaReason.trim(),
+        },
+      })
     } catch (error) {
       console.error("Error al registrar la merma:", error)
       toast.error("No se pudo registrar la merma")
@@ -971,6 +999,21 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       setPieceAdjustmentReason("")
       await syncInventoryMovements(todayInventory.id)
       toast.success("Stock ajustado para " + PIECE_LABELS[selectedPieceAdjustment])
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "inventario",
+        accion: "ajuste_admin_stock_pieza",
+        entidad: "inventario_diario",
+        entidadId: inventory.id,
+        detalle: {
+          fecha: inventory.fecha,
+          pieza: selectedPieceAdjustment,
+          stock_anterior: currentStock,
+          stock_objetivo: targetStockValue,
+          delta_piezas: deltaPieces,
+          motivo: pieceAdjustmentReason.trim(),
+        },
+      })
     } catch (error) {
       console.error("Error al guardar ajuste por pieza:", error)
       toast.error("No se pudo guardar el ajuste por pieza")
@@ -1034,6 +1077,16 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       ])
       await syncInventoryMovements(inventory.id)
       toast.success("Dia reabierto en modo administrador")
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "inventario",
+        accion: "reapertura_dia",
+        entidad: "inventario_diario",
+        entidadId: inventory.id,
+        detalle: {
+          fecha: inventory.fecha,
+        },
+      })
     } catch (error) {
       console.error("Error al reabrir el dia:", error)
       toast.error("No se pudo reabrir el dia")
@@ -1100,6 +1153,20 @@ export function InventoryManager({ onInventoryStarted }: InventoryManagerProps) 
       } else {
         toast.success("Cierre de turno guardado con faltante registrado")
       }
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "inventario",
+        accion: "cierre_dia",
+        entidad: "inventario_diario",
+        entidadId: inventory.id,
+        detalle: {
+          fecha: inventory.fecha,
+          conteo_fisico: conteoValue,
+          stock_estimado: stockEstimado,
+          diferencia,
+          notas_cierre: notasCierre.trim() || null,
+        },
+      })
     } catch (error) {
       console.error("Error al cerrar el dia:", error)
       toast.error("No se pudo guardar el cierre de turno")

@@ -6,6 +6,7 @@ import {
   type InventoryPieceKey,
 } from "../constants/inventory"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
+import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
 import { supabase } from "../lib/supabase"
 import type { Producto, ProductoCategoria, ProductoSubcategoria } from "../types/database"
 
@@ -228,6 +229,7 @@ export function ProductCatalogManager() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [form, setForm] = useState<ProductFormState>(EMPTY_FORM)
 
@@ -449,7 +451,7 @@ export function ProductCatalogManager() {
 
     try {
       setIsSaving(true)
-      const { error } = await (supabase as typeof supabase & {
+      const { data, error } = await (supabase as typeof supabase & {
         rpc: (
           fn: "guardar_producto_admin",
           args: {
@@ -489,14 +491,89 @@ export function ProductCatalogManager() {
         throw error
       }
 
-      toast.success(editingProductId ? "Producto actualizado" : "Producto creado")
+      if (!data?.id) {
+        throw new Error("No se recibio el producto guardado")
+      }
+
+      const savedProduct = data as Producto
+      const wasEditing = Boolean(editingProductId)
+
+      toast.success(wasEditing ? "Producto actualizado" : "Producto creado")
       handleResetForm()
       await loadProductos()
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "productos",
+        accion: wasEditing ? "producto_actualizado" : "producto_creado",
+        entidad: "productos",
+        entidadId: savedProduct.id,
+        detalle: {
+          nombre: savedProduct.nombre,
+          precio: savedProduct.precio,
+          categoria: savedProduct.categoria,
+          subcategoria: savedProduct.subcategoria,
+        },
+      })
     } catch (error) {
       console.error("Error al guardar producto:", error)
       toast.error("No se pudo guardar el producto")
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function handleDeleteProduct(producto: Producto) {
+    if (!adminAccess.isAuthenticated) {
+      toast.error("Debes iniciar sesion como administrador")
+      return
+    }
+
+    if (!adminAccess.isAdmin) {
+      toast.error("Solo un administrador puede eliminar productos")
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Se eliminara el producto \"${producto.nombre}\". Esta accion no se puede deshacer. Deseas continuar?`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setDeletingProductId(producto.id)
+
+      const { error } = await supabase.from("productos").delete().eq("id", producto.id)
+
+      if (error) {
+        throw error
+      }
+
+      if (editingProductId === producto.id) {
+        handleResetForm()
+      }
+
+      await loadProductos()
+      toast.success("Producto eliminado")
+
+      void registrarEventoAuditoriaBestEffort({
+        modulo: "productos",
+        accion: "producto_eliminado",
+        entidad: "productos",
+        entidadId: producto.id,
+        detalle: {
+          nombre: producto.nombre,
+          precio: producto.precio,
+          categoria: producto.categoria,
+          subcategoria: producto.subcategoria,
+        },
+      })
+    } catch (error) {
+      console.error("Error al eliminar producto:", error)
+      toast.error("No se pudo eliminar el producto")
+    } finally {
+      setDeletingProductId(null)
     }
   }
 
@@ -864,14 +941,24 @@ export function ProductCatalogManager() {
 
                     <div className="shrink-0 text-right">
                       <p className="text-lg font-black text-slate-900">${producto.precio}</p>
-                      <button
-                        type="button"
-                        onClick={() => handleEditProduct(producto)}
-                        disabled={!canManageProducts}
-                        className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100"
-                      >
-                        Editar
-                      </button>
+                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditProduct(producto)}
+                          disabled={!canManageProducts || deletingProductId === producto.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteProduct(producto)}
+                          disabled={!canManageProducts || deletingProductId === producto.id}
+                          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          {deletingProductId === producto.id ? "Eliminando..." : "Eliminar"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </article>

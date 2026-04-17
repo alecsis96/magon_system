@@ -3,9 +3,14 @@ import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
 import { formatDateTime } from "../lib/datetime"
+import {
+  mapPedidoDetalleToCorrectionDraftDetail,
+  saveOrderCorrectionDraftToStorage,
+} from "../lib/orderCorrectionDraft"
 import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
 import type {
+  CancelarPedidoParaCorreccionResult,
   CancelarPedidoEmpleadoResult,
   Cliente,
   EliminarPedidoAdminResult,
@@ -14,17 +19,31 @@ import type {
 } from "../types/database"
 
 type OrderWithClient = Pedido & {
-  clientes: Pick<Cliente, "nombre" | "notas_entrega"> | null
+  clientes: Pick<
+    Cliente,
+    "nombre" | "telefono" | "direccion_habitual" | "referencias" | "notas_entrega"
+  > | null
   pedido_detalles: Pick<
     PedidoDetalle,
+    | "producto_id"
+    | "producto_codigo"
     | "producto_nombre"
+    | "descripcion"
     | "cantidad"
+    | "precio_unitario"
+    | "subtotal"
     | "variante_3_4"
+    | "merma_descripcion"
     | "alas"
     | "piernas"
     | "muslos"
     | "pechugas_grandes"
     | "pechugas_chicas"
+    | "merma_alas"
+    | "merma_piernas"
+    | "merma_muslos"
+    | "merma_pechugas_grandes"
+    | "merma_pechugas_chicas"
   >[] | null
 }
 
@@ -279,7 +298,11 @@ function getStatusAction(order: OrderWithClient) {
   }
 }
 
-export function OrdersMonitor() {
+type OrdersMonitorProps = {
+  onStartCorrection?: () => void
+}
+
+export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
   const [activeOrders, setActiveOrders] = useState<OrderWithClient[]>([])
   const [historyOrders, setHistoryOrders] = useState<OrderWithClient[]>([])
   const [view, setView] = useState<MonitorView>("active")
@@ -290,6 +313,7 @@ export function OrdersMonitor() {
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
   const [historyDayFilter, setHistoryDayFilter] = useState<HistoryDayFilter>("today")
   const [customHistoryDate, setCustomHistoryDate] = useState(getLocalDateInputValue)
+  const [todayDashboardOrders, setTodayDashboardOrders] = useState<OrderWithClient[]>([])
 
   async function refreshAdminAccess() {
     try {
@@ -310,7 +334,7 @@ export function OrdersMonitor() {
       const { data, error } = await supabase
         .from("pedidos")
         .select(
-          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4, alas, piernas, muslos, pechugas_grandes, pechugas_chicas)",
+          "*, clientes(nombre, telefono, direccion_habitual, referencias, notas_entrega), pedido_detalles(producto_id, producto_codigo, producto_nombre, descripcion, cantidad, precio_unitario, subtotal, variante_3_4, merma_descripcion, alas, piernas, muslos, pechugas_grandes, pechugas_chicas, merma_alas, merma_piernas, merma_muslos, merma_pechugas_grandes, merma_pechugas_chicas)",
         )
         .order("fecha_creacion", { ascending: true })
         .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
@@ -349,7 +373,7 @@ export function OrdersMonitor() {
       let historyQuery = supabase
         .from("pedidos")
         .select(
-          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4, alas, piernas, muslos, pechugas_grandes, pechugas_chicas)",
+          "*, clientes(nombre, telefono, direccion_habitual, referencias, notas_entrega), pedido_detalles(producto_id, producto_codigo, producto_nombre, descripcion, cantidad, precio_unitario, subtotal, variante_3_4, merma_descripcion, alas, piernas, muslos, pechugas_grandes, pechugas_chicas, merma_alas, merma_piernas, merma_muslos, merma_pechugas_grandes, merma_pechugas_chicas)",
         )
         .in("estado", HISTORY_ORDER_STATUSES)
 
@@ -380,8 +404,37 @@ export function OrdersMonitor() {
     }
   }
 
+  async function loadTodayDashboardOrders() {
+    try {
+      const now = new Date()
+      const startOfToday = new Date(now)
+      startOfToday.setHours(0, 0, 0, 0)
+
+      const endOfToday = new Date(startOfToday)
+      endOfToday.setHours(23, 59, 59, 999)
+
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select(
+          "*, clientes(nombre, telefono, direccion_habitual, referencias, notas_entrega), pedido_detalles(producto_id, producto_codigo, producto_nombre, descripcion, cantidad, precio_unitario, subtotal, variante_3_4, merma_descripcion, alas, piernas, muslos, pechugas_grandes, pechugas_chicas, merma_alas, merma_piernas, merma_muslos, merma_pechugas_grandes, merma_pechugas_chicas)",
+        )
+        .gte("fecha_creacion", startOfToday.toISOString())
+        .lte("fecha_creacion", endOfToday.toISOString())
+        .order("fecha_creacion", { ascending: false })
+        .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
+
+      if (error) {
+        throw error
+      }
+
+      setTodayDashboardOrders((data ?? []) as OrderWithClient[])
+    } catch (error) {
+      console.error("Error al cargar tablero operativo:", error)
+    }
+  }
+
   useEffect(() => {
-    void Promise.all([loadActiveOrders(), loadHistoryOrders()])
+    void Promise.all([loadActiveOrders(), loadHistoryOrders(), loadTodayDashboardOrders()])
     void refreshAdminAccess()
 
     const {
@@ -464,7 +517,11 @@ export function OrdersMonitor() {
         throw error
       }
 
-      await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
+      await Promise.all([
+        loadActiveOrders(false),
+        loadHistoryOrders(false),
+        loadTodayDashboardOrders(),
+      ])
       toast.success("Pago marcado como pagado")
     } catch (error) {
       console.error("Error al actualizar el pago:", error)
@@ -513,7 +570,11 @@ export function OrdersMonitor() {
         }
       }
 
-      await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
+      await Promise.all([
+        loadActiveOrders(false),
+        loadHistoryOrders(false),
+        loadTodayDashboardOrders(),
+      ])
       toast.success("Pedido enviado con repartidor")
     } catch (error) {
       console.error("Error al actualizar el pedido:", error)
@@ -559,7 +620,11 @@ export function OrdersMonitor() {
         throw new Error("No se pudo eliminar el pedido")
       }
 
-      await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
+      await Promise.all([
+        loadActiveOrders(false),
+        loadHistoryOrders(false),
+        loadTodayDashboardOrders(),
+      ])
 
       if (result?.reversion_inventario_aplicada === false) {
         const reason =
@@ -653,6 +718,7 @@ export function OrdersMonitor() {
       await Promise.all([
         loadActiveOrders(false),
         loadHistoryOrders(false, historyDayFilter),
+        loadTodayDashboardOrders(),
       ])
 
       toast.success("Pedido cancelado")
@@ -661,6 +727,81 @@ export function OrdersMonitor() {
       toast.error(
         error instanceof Error ? error.message : "No se pudo cancelar el pedido",
       )
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+
+  async function handleCorrectOrder(order: OrderWithClient) {
+    if (!canCancelOrder(order)) {
+      toast.error("Este pedido ya no se puede corregir")
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Se cancelara el pedido ${getShortOrderId(order.id)} para corregirlo desde caja. Se revertira inventario y se cargara un borrador en POS.`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setProcessingOrderId(order.id)
+
+      const { data, error } = await supabase.rpc("cancelar_pedido_para_correccion", {
+        p_pedido_id: order.id,
+        p_motivo: "correccion",
+      })
+
+      if (error) {
+        throw error
+      }
+
+      const result = data as CancelarPedidoParaCorreccionResult | null
+
+      if (!result?.ok || result.reversion_inventario_aplicada === false) {
+        throw new Error(result?.motivo_reversion_inventario ?? "No se pudo corregir el pedido")
+      }
+
+      const details = (order.pedido_detalles ?? []).map((detail) =>
+        mapPedidoDetalleToCorrectionDraftDetail(detail),
+      )
+
+      if (details.length === 0) {
+        throw new Error("El pedido no tiene detalles para corregir")
+      }
+
+      saveOrderCorrectionDraftToStorage({
+        original_pedido_id: order.id,
+        short_order_id: getShortOrderId(order.id),
+        created_at: new Date().toISOString(),
+        tipo_pedido: order.tipo_pedido,
+        metodo_pago: order.metodo_pago,
+        estado_pago: order.estado_pago,
+        customer: {
+          id: order.cliente_id,
+          nombre: order.clientes?.nombre ?? null,
+          telefono: order.clientes?.telefono ?? null,
+          direccion_habitual: order.clientes?.direccion_habitual ?? null,
+          referencias: order.clientes?.referencias ?? null,
+          notas_entrega: order.clientes?.notas_entrega ?? null,
+        },
+        notas: order.clientes?.notas_entrega ?? null,
+        details,
+      })
+
+      await Promise.all([
+        loadActiveOrders(false),
+        loadHistoryOrders(false, historyDayFilter),
+        loadTodayDashboardOrders(),
+      ])
+
+      toast.success("Pedido listo para correccion en POS")
+      onStartCorrection?.()
+    } catch (error) {
+      console.error("Error al preparar correccion:", error)
+      toast.error(error instanceof Error ? error.message : "No se pudo corregir el pedido")
     } finally {
       setProcessingOrderId(null)
     }
@@ -695,6 +836,36 @@ export function OrdersMonitor() {
       cancelados,
     }
   }, [historyOrders, view])
+
+  const todayDashboard = useMemo(() => {
+    const totalVentas = todayDashboardOrders.reduce(
+      (sum, order) => sum + (order.estado === "cancelado" ? 0 : order.total),
+      0,
+    )
+    const pedidosHoy = todayDashboardOrders.length
+    const piezasVendidas = todayDashboardOrders.reduce(
+      (sum, order) => sum + getOrderSoldPieces(order),
+      0,
+    )
+    const pendientesCobro = todayDashboardOrders.filter(
+      (order) => order.estado !== "cancelado" && !isEffectivelyPaidOrder(order),
+    ).length
+    const canceladosHoy = todayDashboardOrders.filter(
+      (order) => order.estado === "cancelado",
+    ).length
+    const enCaminoHoy = todayDashboardOrders.filter(
+      (order) => order.estado === "en_camino",
+    ).length
+
+    return {
+      totalVentas,
+      pedidosHoy,
+      piezasVendidas,
+      pendientesCobro,
+      canceladosHoy,
+      enCaminoHoy,
+    }
+  }, [todayDashboardOrders])
 
   return (
     <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
@@ -742,13 +913,68 @@ export function OrdersMonitor() {
           <button
             type="button"
             onClick={() =>
-              void (view === "active" ? loadActiveOrders() : loadHistoryOrders())
+              void Promise.all([
+                view === "active" ? loadActiveOrders() : loadHistoryOrders(),
+                loadTodayDashboardOrders(),
+              ])
             }
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100"
           >
             Recargar pedidos
           </button>
         </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
+        <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Ventas hoy
+          </p>
+          <p className="mt-1 text-base font-black text-slate-900">
+            {currencyFormatter.format(todayDashboard.totalVentas)}
+          </p>
+        </article>
+
+        <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Pedidos hoy
+          </p>
+          <p className="mt-1 text-base font-black text-slate-900">{todayDashboard.pedidosHoy}</p>
+        </article>
+
+        <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Piezas vendidas
+          </p>
+          <p className="mt-1 text-base font-black text-slate-900">
+            {todayDashboard.piezasVendidas}
+          </p>
+        </article>
+
+        <article className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+            Pendientes cobro
+          </p>
+          <p className="mt-1 text-base font-black text-amber-800">
+            {todayDashboard.pendientesCobro}
+          </p>
+        </article>
+
+        <article className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-600">
+            Cancelados hoy
+          </p>
+          <p className="mt-1 text-base font-black text-rose-700">
+            {todayDashboard.canceladosHoy}
+          </p>
+        </article>
+
+        <article className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-600">
+            En camino
+          </p>
+          <p className="mt-1 text-base font-black text-sky-700">{todayDashboard.enCaminoHoy}</p>
+        </article>
       </div>
 
       <div className="mt-6">
@@ -1149,6 +1375,17 @@ export function OrdersMonitor() {
                             className="min-w-0 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-bold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                           >
                             Cancelar pedido
+                          </button>
+                        ) : null}
+
+                        {canCancelOrder(order) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleCorrectOrder(order)}
+                            disabled={isProcessing}
+                            className="min-w-0 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[13px] font-bold text-sky-800 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Corregir pedido
                           </button>
                         ) : null}
                       </>

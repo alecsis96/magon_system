@@ -316,6 +316,7 @@ export interface PedidoDetalleUpdate extends Record<string, unknown> {
 }
 export interface Pedido extends Record<string, unknown> {
   id: UUID;
+  pedido_corregido_de_id: UUID | null;
   cliente_id: UUID | null;
   estado: PedidoEstado | null;
   tipo_pedido: PedidoTipo;
@@ -329,6 +330,7 @@ export interface Pedido extends Record<string, unknown> {
 }
 export interface PedidoInsert extends Record<string, unknown> {
   id?: UUID;
+  pedido_corregido_de_id?: UUID | null;
   cliente_id?: UUID | null;
   estado?: PedidoEstado | null;
   tipo_pedido: PedidoTipo;
@@ -342,6 +344,7 @@ export interface PedidoInsert extends Record<string, unknown> {
 }
 export interface PedidoUpdate extends Record<string, unknown> {
   id?: UUID;
+  pedido_corregido_de_id?: UUID | null;
   cliente_id?: UUID | null;
   estado?: PedidoEstado | null;
   tipo_pedido?: PedidoTipo;
@@ -568,6 +571,7 @@ export interface AuditoriaEventoUpdate extends Record<string, unknown> {
 }
 export interface RegistrarVentaPosResult extends Record<string, unknown> {
   pedido_id: UUID;
+  pedido_corregido_de_id: UUID | null;
   folio: string | null;
   fecha_creacion: ISODateTimeString | null;
   total: number;
@@ -635,6 +639,31 @@ export interface CancelarPedidoEmpleadoResult extends Record<string, unknown> {
   pedido: Pedido;
   inventory_id: UUID | null;
   audit_event_id?: UUID | null;
+  reversion_inventario_aplicada: boolean;
+  motivo_reversion_inventario?: string | null;
+  piezas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+  mermas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+}
+export interface CancelarPedidoParaCorreccionResult extends Record<string, unknown> {
+  ok: boolean;
+  pedido: Pedido;
+  inventory_id: UUID | null;
+  audit_event_id?: UUID | null;
+  motivo_cancelacion: string;
   reversion_inventario_aplicada: boolean;
   motivo_reversion_inventario?: string | null;
   piezas_revertidas: {
@@ -774,6 +803,13 @@ export interface Database {
         };
         Returns: CancelarPedidoEmpleadoResult;
       };
+      cancelar_pedido_para_correccion: {
+        Args: {
+          p_pedido_id: UUID;
+          p_motivo?: string;
+        };
+        Returns: CancelarPedidoParaCorreccionResult;
+      };
       es_usuario_admin: {
         Args: Record<string, never>;
         Returns: boolean;
@@ -843,9 +879,10 @@ export interface Database {
           p_cliente_id?: UUID | null;
           p_estado?: string | null;
           p_fecha?: ISODateString;
+          p_pedido_corregido_de_id?: UUID | null;
           p_detalles?: Json;
         };
-        Returns: Json;
+        Returns: RegistrarVentaPosResult;
       };
       reabrir_inventario_dia: {
         Args: {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "react-hot-toast"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
@@ -15,11 +15,21 @@ import type {
 
 type OrderWithClient = Pedido & {
   clientes: Pick<Cliente, "nombre" | "notas_entrega"> | null
-  pedido_detalles: Pick<PedidoDetalle, "producto_nombre" | "cantidad" | "variante_3_4">[] | null
+  pedido_detalles: Pick<
+    PedidoDetalle,
+    | "producto_nombre"
+    | "cantidad"
+    | "variante_3_4"
+    | "alas"
+    | "piernas"
+    | "muslos"
+    | "pechugas_grandes"
+    | "pechugas_chicas"
+  >[] | null
 }
 
 type MonitorView = "active" | "history"
-type HistoryDayFilter = "today" | "yesterday" | "7d" | "15d" | "30d" | "all"
+type HistoryDayFilter = "today" | "yesterday" | "dayBeforeYesterday" | "custom"
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -50,22 +60,53 @@ function isHistoryOrderStatus(estado: Pedido["estado"]) {
 const HISTORY_DAY_FILTER_OPTIONS: Array<{ value: HistoryDayFilter; label: string }> = [
   { value: "today", label: "Hoy" },
   { value: "yesterday", label: "Ayer" },
-  { value: "7d", label: "7d" },
-  { value: "15d", label: "15d" },
-  { value: "30d", label: "30d" },
-  { value: "all", label: "Todo" },
+  { value: "dayBeforeYesterday", label: "Antier" },
+  { value: "custom", label: "Fecha" },
 ]
 
-function getDayFilterBounds(filter: HistoryDayFilter) {
-  const now = new Date()
+function getLocalDateInputValue(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
 
-  if (filter === "all") {
-    return { from: null, to: null }
+  return `${year}-${month}-${day}`
+}
+
+function getDayFilterBounds(filter: HistoryDayFilter, customDate: string) {
+  const now = new Date()
+  const startOfToday = new Date(now)
+  startOfToday.setHours(0, 0, 0, 0)
+
+  if (filter === "custom") {
+    if (!customDate) {
+      return {
+        from: startOfToday.toISOString(),
+        to: now.toISOString(),
+      }
+    }
+
+    const [year, month, day] = customDate.split("-").map((part) => Number.parseInt(part, 10))
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return {
+        from: startOfToday.toISOString(),
+        to: now.toISOString(),
+      }
+    }
+
+    const startOfCustomDay = new Date(year, month - 1, day)
+    startOfCustomDay.setHours(0, 0, 0, 0)
+
+    const endOfCustomDay = new Date(startOfCustomDay)
+    endOfCustomDay.setHours(23, 59, 59, 999)
+
+    return {
+      from: startOfCustomDay.toISOString(),
+      to: endOfCustomDay.toISOString(),
+    }
   }
 
   if (filter === "today") {
-    const startOfToday = new Date(now)
-    startOfToday.setHours(0, 0, 0, 0)
     return { from: startOfToday.toISOString(), to: now.toISOString() }
   }
 
@@ -83,13 +124,16 @@ function getDayFilterBounds(filter: HistoryDayFilter) {
     }
   }
 
-  const rollingDays = Number.parseInt(filter.replace("d", ""), 10)
-  const rollingStart = new Date(now)
-  rollingStart.setDate(rollingStart.getDate() - rollingDays)
+  const startOfDayBeforeYesterday = new Date(startOfToday)
+  startOfDayBeforeYesterday.setDate(startOfDayBeforeYesterday.getDate() - 2)
+  startOfDayBeforeYesterday.setHours(0, 0, 0, 0)
+
+  const endOfDayBeforeYesterday = new Date(startOfDayBeforeYesterday)
+  endOfDayBeforeYesterday.setHours(23, 59, 59, 999)
 
   return {
-    from: rollingStart.toISOString(),
-    to: now.toISOString(),
+    from: startOfDayBeforeYesterday.toISOString(),
+    to: endOfDayBeforeYesterday.toISOString(),
   }
 }
 
@@ -149,6 +193,14 @@ function formatOrderStatus(estado: Pedido["estado"]) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function isEffectivelyPaidOrder(order: Pedido) {
+  return (
+    order.estado_pago === "pagado" ||
+    order.estado === "entregado" ||
+    order.tipo_pedido === "mostrador"
+  )
+}
+
 function canCancelOrder(order: OrderWithClient) {
   return !isHistoryOrderStatus(order.estado)
 }
@@ -193,6 +245,30 @@ function formatOrderPackageSummary(order: OrderWithClient) {
   return `${firstItemSummary} +${extraProductsCount} productos`
 }
 
+function getOrderSoldPieces(order: OrderWithClient) {
+  return (order.pedido_detalles ?? []).reduce((orderSum, detail) => {
+    const pieceFields = [
+      detail.alas,
+      detail.piernas,
+      detail.muslos,
+      detail.pechugas_grandes,
+      detail.pechugas_chicas,
+    ]
+
+    const hasAnyPieceField = pieceFields.some((value) => Number.isFinite(value) && value > 0)
+    const detailPieces = hasAnyPieceField
+      ? pieceFields.reduce(
+          (detailSum, value) => detailSum + (Number.isFinite(value) ? Math.max(0, value) : 0),
+          0,
+        )
+      : Number.isFinite(detail.cantidad)
+        ? Math.max(0, detail.cantidad)
+        : 0
+
+    return orderSum + detailPieces
+  }, 0)
+}
+
 function getStatusAction(order: OrderWithClient) {
   if (order.tipo_pedido !== "domicilio") {
     return null
@@ -213,7 +289,8 @@ export function OrdersMonitor() {
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
   const [openActionsMenuOrderId, setOpenActionsMenuOrderId] = useState<string | null>(null)
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
-  const [historyDayFilter, setHistoryDayFilter] = useState<HistoryDayFilter>("30d")
+  const [historyDayFilter, setHistoryDayFilter] = useState<HistoryDayFilter>("today")
+  const [customHistoryDate, setCustomHistoryDate] = useState(getLocalDateInputValue)
 
   async function refreshAdminAccess() {
     try {
@@ -234,7 +311,7 @@ export function OrdersMonitor() {
       const { data, error } = await supabase
         .from("pedidos")
         .select(
-          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4)",
+          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4, alas, piernas, muslos, pechugas_grandes, pechugas_chicas)",
         )
         .order("fecha_creacion", { ascending: true })
         .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
@@ -258,18 +335,22 @@ export function OrdersMonitor() {
     }
   }
 
-  async function loadHistoryOrders(showLoader = true, dayFilter = historyDayFilter) {
+  async function loadHistoryOrders(
+    showLoader = true,
+    dayFilter = historyDayFilter,
+    selectedDate = customHistoryDate,
+  ) {
     try {
       if (showLoader) {
         setIsLoadingHistory(true)
       }
 
-      const { from, to } = getDayFilterBounds(dayFilter)
+      const { from, to } = getDayFilterBounds(dayFilter, selectedDate)
 
       let historyQuery = supabase
         .from("pedidos")
         .select(
-          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4)",
+          "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4, alas, piernas, muslos, pechugas_grandes, pechugas_chicas)",
         )
         .in("estado", HISTORY_ORDER_STATUSES)
 
@@ -316,8 +397,15 @@ export function OrdersMonitor() {
   }, [])
 
   useEffect(() => {
-    void loadHistoryOrders()
-  }, [historyDayFilter])
+    if (historyDayFilter !== "custom") {
+      void loadHistoryOrders()
+      return
+    }
+
+    if (customHistoryDate) {
+      void loadHistoryOrders()
+    }
+  }, [historyDayFilter, customHistoryDate])
 
   useEffect(() => {
     setOpenActionsMenuOrderId(null)
@@ -581,6 +669,33 @@ export function OrdersMonitor() {
 
   const isLoading = view === "active" ? isLoadingActive : isLoadingHistory
   const ordersToRender = view === "active" ? activeOrders : historyOrders
+  const historySummary = useMemo(() => {
+    if (view !== "history") {
+      return null
+    }
+
+    const pedidos = historyOrders.length
+    const totalHistorico = historyOrders.reduce((sum, order) => sum + order.total, 0)
+    const cobrado = historyOrders.reduce(
+      (sum, order) => sum + (isEffectivelyPaidOrder(order) ? order.total : 0),
+      0,
+    )
+    const pendiente = Math.max(totalHistorico - cobrado, 0)
+    const cancelados = historyOrders.reduce(
+      (sum, order) => sum + (order.estado === "cancelado" ? 1 : 0),
+      0,
+    )
+    const piezasVendidas = historyOrders.reduce((sum, order) => sum + getOrderSoldPieces(order), 0)
+
+    return {
+      pedidos,
+      piezasVendidas,
+      totalHistorico,
+      cobrado,
+      pendiente,
+      cancelados,
+    }
+  }, [historyOrders, view])
 
   return (
     <section className="rounded-[2rem] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.1)] ring-1 ring-slate-200">
@@ -640,7 +755,7 @@ export function OrdersMonitor() {
       <div className="mt-6">
         {view === "history" ? (
           <div className="mb-4 overflow-x-auto pb-1">
-            <div className="flex min-w-max items-center gap-2">
+            <div className="flex min-w-max flex-wrap items-center gap-2">
               {HISTORY_DAY_FILTER_OPTIONS.map((filterOption) => {
                 const isActive = historyDayFilter === filterOption.value
 
@@ -660,7 +775,77 @@ export function OrdersMonitor() {
                   </button>
                 )
               })}
+
+              {historyDayFilter === "custom" ? (
+                <label className="ml-1 flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                  <span className="uppercase tracking-[0.1em] text-slate-500">Dia</span>
+                  <input
+                    type="date"
+                    value={customHistoryDate}
+                    onChange={(event) => setCustomHistoryDate(event.target.value)}
+                    className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+              ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {view === "history" && historySummary ? (
+          <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-6">
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Pedidos
+              </p>
+              <p className="mt-1 text-base font-black text-slate-900">
+                {historySummary.pedidos}
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Piezas vendidas
+              </p>
+              <p className="mt-1 text-base font-black text-slate-900">
+                {historySummary.piezasVendidas}
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Total historico
+              </p>
+              <p className="mt-1 text-base font-black text-slate-900">
+                {currencyFormatter.format(historySummary.totalHistorico)}
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
+                Cobrado
+              </p>
+              <p className="mt-1 text-base font-black text-emerald-700">
+                {currencyFormatter.format(historySummary.cobrado)}
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                Pendiente
+              </p>
+              <p className="mt-1 text-base font-black text-amber-800">
+                {currencyFormatter.format(historySummary.pendiente)}
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-600">
+                Cancelados
+              </p>
+              <p className="mt-1 text-base font-black text-rose-700">
+                {historySummary.cancelados}
+              </p>
+            </article>
           </div>
         ) : null}
 

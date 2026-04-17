@@ -219,6 +219,22 @@ function isEffectivelyPaid(order: Pedido) {
   )
 }
 
+function formatExpenseTime(value: string | null) {
+  if (!value) {
+    return "Sin hora"
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return "Sin hora"
+  }
+
+  return parsed.toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 export function AccountingDashboard() {
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
   const [isLoading, setIsLoading] = useState(true)
@@ -450,6 +466,53 @@ export function AccountingDashboard() {
       neto: cobrado - egresosTotal,
     }
   }, [egresosSelectedDateNoCancelados, pedidosSelectedDate])
+
+  const topExpenseCategoriesSelectedDate = useMemo(() => {
+    const categoryMap = new Map<string, { category: string; amount: number; count: number }>()
+
+    for (const egreso of egresosSelectedDateNoCancelados) {
+      const normalizedCategory = egreso.categoria?.trim() || "Sin categoria"
+      const current = categoryMap.get(normalizedCategory)
+
+      if (current) {
+        current.amount += egreso.monto
+        current.count += 1
+      } else {
+        categoryMap.set(normalizedCategory, {
+          category: normalizedCategory,
+          amount: egreso.monto,
+          count: 1,
+        })
+      }
+    }
+
+    return Array.from(categoryMap.values())
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 3)
+  }, [egresosSelectedDateNoCancelados])
+
+  const latestExpensesSelectedDate = useMemo(() => {
+    return [...egresosSelectedDateNoCancelados]
+      .sort((a, b) => {
+        const aTime = new Date(a.creado_en ?? "").getTime()
+        const bTime = new Date(b.creado_en ?? "").getTime()
+
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
+          return 0
+        }
+
+        if (Number.isNaN(aTime)) {
+          return 1
+        }
+
+        if (Number.isNaN(bTime)) {
+          return -1
+        }
+
+        return bTime - aTime
+      })
+      .slice(0, 5)
+  }, [egresosSelectedDateNoCancelados])
 
   const efectivoCobradoSelectedDate = useMemo(
     () =>
@@ -1148,6 +1211,83 @@ export function AccountingDashboard() {
               <p className="mt-1 text-lg font-black text-sky-600">
                 {currencyFormatter.format(transferenciaCobradaSelectedDate)}
               </p>
+            </article>
+          </div>
+
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            <article className="rounded-2xl bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Top categorias de gasto
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("egresos")}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600 transition hover:border-slate-300 hover:bg-white"
+                >
+                  Ver egresos
+                </button>
+              </div>
+
+              <div className="mt-2 space-y-1.5">
+                {topExpenseCategoriesSelectedDate.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-500">
+                    No hay egresos registrados en este dia.
+                  </p>
+                ) : (
+                  topExpenseCategoriesSelectedDate.map((category) => (
+                    <div
+                      key={category.category}
+                      className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-slate-800">
+                          {category.category}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {category.count} mov.
+                        </p>
+                      </div>
+                      <p className="text-sm font-black text-rose-600">
+                        {currencyFormatter.format(category.amount)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+
+            <article className="rounded-2xl bg-white p-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Ultimos egresos del dia
+              </p>
+
+              <div className="mt-2 space-y-1.5">
+                {latestExpensesSelectedDate.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-500">
+                    Sin egresos para este dia.
+                  </p>
+                ) : (
+                  latestExpensesSelectedDate.map((egreso) => (
+                    <div
+                      key={egreso.id}
+                      className="grid grid-cols-[1fr_auto] items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-slate-900">
+                          {egreso.concepto}
+                        </p>
+                        <p className="truncate text-[11px] text-slate-500">
+                          {egreso.categoria} • {egreso.medio_salida} • {formatExpenseTime(egreso.creado_en)}
+                        </p>
+                      </div>
+                      <p className="text-sm font-black text-rose-600">
+                        {currencyFormatter.format(egreso.monto)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
             </article>
           </div>
         </div>

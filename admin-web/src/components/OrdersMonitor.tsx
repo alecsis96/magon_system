@@ -6,6 +6,7 @@ import { formatDateTime } from "../lib/datetime"
 import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
 import type {
+  CancelarPedidoEmpleadoResult,
   Cliente,
   EliminarPedidoAdminResult,
   Pedido,
@@ -40,6 +41,11 @@ const HISTORY_ORDER_STATUSES = [
   "rechazado",
   "devuelto",
 ]
+
+function isHistoryOrderStatus(estado: Pedido["estado"]) {
+  const normalizedStatus = estado?.trim().toLowerCase() ?? ""
+  return HISTORY_ORDER_STATUSES.includes(normalizedStatus)
+}
 
 const HISTORY_DAY_FILTER_OPTIONS: Array<{ value: HistoryDayFilter; label: string }> = [
   { value: "today", label: "Hoy" },
@@ -143,6 +149,10 @@ function formatOrderStatus(estado: Pedido["estado"]) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function canCancelOrder(order: OrderWithClient) {
+  return !isHistoryOrderStatus(order.estado)
+}
+
 function formatVariantLabel(variante: PedidoDetalle["variante_3_4"]) {
   const sanitizedVariant = variante?.trim()
 
@@ -226,7 +236,6 @@ export function OrdersMonitor() {
         .select(
           "*, clientes(nombre, notas_entrega), pedido_detalles(producto_nombre, cantidad, variante_3_4)",
         )
-        .neq("estado", "entregado")
         .order("fecha_creacion", { ascending: true })
         .order("creado_en", { ascending: true, foreignTable: "pedido_detalles" })
 
@@ -234,7 +243,11 @@ export function OrdersMonitor() {
         throw error
       }
 
-      setActiveOrders((data ?? []) as OrderWithClient[])
+      const nextOrders = ((data ?? []) as OrderWithClient[]).filter(
+        (order) => !isHistoryOrderStatus(order.estado),
+      )
+
+      setActiveOrders(nextOrders)
     } catch (error) {
       console.error("Error al cargar pedidos activos:", error)
       toast.error("No se pudieron cargar los pedidos activos")
@@ -502,6 +515,70 @@ export function OrdersMonitor() {
     }
   }
 
+  async function handleCancelOrder(order: OrderWithClient) {
+    if (!canCancelOrder(order)) {
+      toast.error("Este pedido ya no se puede cancelar")
+      return
+    }
+
+    const reason = window.prompt(
+      `Motivo de cancelacion para ${getShortOrderId(order.id)}:`,
+      order.motivo_cancelacion ?? "",
+    )
+
+    if (reason === null) {
+      return
+    }
+
+    const trimmedReason = reason.trim()
+
+    if (trimmedReason.length < 4) {
+      toast.error("Escribe un motivo de al menos 4 caracteres")
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Se cancelara el pedido ${getShortOrderId(order.id)} y se revertira inventario.\n\nMotivo: ${trimmedReason}`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setProcessingOrderId(order.id)
+
+      const { data, error } = await supabase.rpc("cancelar_pedido_empleado", {
+        p_pedido_id: order.id,
+        p_motivo: trimmedReason,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      const result = data as CancelarPedidoEmpleadoResult | null
+
+      if (!result?.ok || result.reversion_inventario_aplicada === false) {
+        throw new Error(result?.motivo_reversion_inventario ?? "No se pudo cancelar el pedido")
+      }
+
+      await Promise.all([
+        loadActiveOrders(false),
+        loadHistoryOrders(false, historyDayFilter),
+      ])
+
+      toast.success("Pedido cancelado")
+    } catch (error) {
+      console.error("Error al cancelar el pedido:", error)
+      toast.error(
+        error instanceof Error ? error.message : "No se pudo cancelar el pedido",
+      )
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+
   const isLoading = view === "active" ? isLoadingActive : isLoadingHistory
   const ordersToRender = view === "active" ? activeOrders : historyOrders
 
@@ -616,6 +693,7 @@ export function OrdersMonitor() {
               const deliveryNotes =
                 order.clientes?.notas_entrega?.trim() ||
                 "Sin direccion o referencias registradas"
+              const cancelReason = order.motivo_cancelacion?.trim() || null
 
               return (
                 <article
@@ -751,6 +829,24 @@ export function OrdersMonitor() {
                         </dd>
                       </div>
                     ) : null}
+
+                    {view === "history" && order.estado === "cancelado" ? (
+                      <div className="col-span-2 min-w-0">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Cancelacion
+                        </dt>
+                        <dd className="mt-0.5 space-y-1 text-[12px] text-slate-700">
+                          <p className="font-semibold text-amber-700">
+                            {cancelReason ?? "Sin motivo registrado"}
+                          </p>
+                          <p>
+                            {order.cancelado_en
+                              ? `Cancelado el ${formatOrderDateTime(order.cancelado_en)}`
+                              : "Fecha de cancelacion no disponible"}
+                          </p>
+                        </dd>
+                      </div>
+                    ) : null}
                   </dl>
 
                   {order.tipo_pedido === "domicilio" ? (
@@ -788,6 +884,17 @@ export function OrdersMonitor() {
                             }`}
                           >
                             {statusAction.label}
+                          </button>
+                        ) : null}
+
+                        {canCancelOrder(order) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelOrder(order)}
+                            disabled={isProcessing}
+                            className="min-w-0 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-bold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Cancelar pedido
                           </button>
                         ) : null}
                       </>

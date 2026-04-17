@@ -22,6 +22,7 @@ export type PedidoEstado =
   | "en_preparacion"
   | "en_camino"
   | "entregado"
+  | "cancelado"
   | (string & {});
 export type PedidoTipo = "mostrador" | "domicilio" | (string & {});
 export type MetodoPago = "efectivo" | "transferencia" | (string & {});
@@ -322,6 +323,9 @@ export interface Pedido extends Record<string, unknown> {
   metodo_pago: MetodoPago | null;
   fecha_creacion: ISODateTimeString | null;
   estado_pago: EstadoPago;
+  motivo_cancelacion: string | null;
+  cancelado_en: ISODateTimeString | null;
+  cancelado_por: UUID | null;
 }
 export interface PedidoInsert extends Record<string, unknown> {
   id?: UUID;
@@ -332,6 +336,9 @@ export interface PedidoInsert extends Record<string, unknown> {
   metodo_pago?: MetodoPago | null;
   fecha_creacion?: ISODateTimeString | null;
   estado_pago: EstadoPago;
+  motivo_cancelacion?: string | null;
+  cancelado_en?: ISODateTimeString | null;
+  cancelado_por?: UUID | null;
 }
 export interface PedidoUpdate extends Record<string, unknown> {
   id?: UUID;
@@ -342,6 +349,9 @@ export interface PedidoUpdate extends Record<string, unknown> {
   metodo_pago?: MetodoPago | null;
   fecha_creacion?: ISODateTimeString | null;
   estado_pago?: EstadoPago;
+  motivo_cancelacion?: string | null;
+  cancelado_en?: ISODateTimeString | null;
+  cancelado_por?: UUID | null;
 }
 export interface InventarioMovimiento extends Record<string, unknown> {
   id: UUID;
@@ -620,6 +630,30 @@ export interface EliminarPedidoAdminResult extends Record<string, unknown> {
     pechugas_chicas: number;
   };
 }
+export interface CancelarPedidoEmpleadoResult extends Record<string, unknown> {
+  ok: boolean;
+  pedido: Pedido;
+  inventory_id: UUID | null;
+  audit_event_id?: UUID | null;
+  reversion_inventario_aplicada: boolean;
+  motivo_reversion_inventario?: string | null;
+  piezas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+  mermas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+}
 export interface ClienteFrecuenciaMensualRpc extends Record<string, unknown> {
   cliente_id: UUID;
   nombre: string;
@@ -732,6 +766,13 @@ export interface Database {
           p_referencias?: string | null;
         };
         Returns: Cliente;
+      };
+      cancelar_pedido_empleado: {
+        Args: {
+          p_pedido_id: UUID;
+          p_motivo: string;
+        };
+        Returns: CancelarPedidoEmpleadoResult;
       };
       es_usuario_admin: {
         Args: Record<string, never>;

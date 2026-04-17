@@ -184,11 +184,8 @@ function formatOrderPackageSummary(order: OrderWithClient) {
 }
 
 function getStatusAction(order: OrderWithClient) {
-  if (order.tipo_pedido === "mostrador") {
-    return {
-      label: "Entregar",
-      nextState: "entregado" as const,
-    }
+  if (order.tipo_pedido !== "domicilio") {
+    return null
   }
 
   return {
@@ -380,19 +377,16 @@ export function OrdersMonitor() {
   async function handleAdvanceOrder(order: OrderWithClient) {
     const statusAction = getStatusAction(order)
 
+    if (!statusAction) {
+      return
+    }
+
     try {
       setProcessingOrderId(order.id)
 
-      const updatePayload: { estado: Pedido["estado"]; estado_pago?: Pedido["estado_pago"] } = {
-        estado: statusAction.nextState,
-        ...(statusAction.nextState === "entregado"
-          ? { estado_pago: "pagado" }
-          : {}),
-      }
-
       const { error } = await supabase
         .from("pedidos")
-        .update(updatePayload)
+        .update({ estado: statusAction.nextState })
         .eq("id", order.id)
 
       if (error) {
@@ -420,11 +414,7 @@ export function OrdersMonitor() {
       }
 
       await Promise.all([loadActiveOrders(false), loadHistoryOrders(false)])
-      toast.success(
-        statusAction.nextState === "entregado"
-          ? "Pedido entregado"
-          : "Pedido enviado con repartidor",
-      )
+      toast.success("Pedido enviado con repartidor")
     } catch (error) {
       console.error("Error al actualizar el pedido:", error)
       toast.error("No se pudo actualizar el pedido")
@@ -788,16 +778,18 @@ export function OrdersMonitor() {
                           </button>
                         ) : null}
 
-                        <button
-                          type="button"
-                          onClick={() => void handleAdvanceOrder(order)}
-                          disabled={isProcessing}
-                          className={`min-w-0 rounded-2xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none ${
-                            order.estado_pago === "pendiente" ? "flex-1" : "w-full"
-                          }`}
-                        >
-                          {statusAction.label}
-                        </button>
+                        {statusAction ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleAdvanceOrder(order)}
+                            disabled={isProcessing}
+                            className={`min-w-0 rounded-2xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none ${
+                              order.estado_pago === "pendiente" ? "flex-1" : "w-full"
+                            }`}
+                          >
+                            {statusAction.label}
+                          </button>
+                        ) : null}
                       </>
                     ) : null}
 

@@ -60,7 +60,10 @@ begin
     )
     values (
         p_cliente_id,
-        coalesce(p_estado, 'en_preparacion'),
+        case
+            when p_tipo_pedido = 'mostrador' then 'entregado'
+            else coalesce(p_estado, 'en_preparacion')
+        end,
         p_tipo_pedido,
         p_total,
         p_metodo_pago,

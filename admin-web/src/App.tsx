@@ -1022,11 +1022,7 @@ function handleManualPieceSelectionChange(
         tipo_pedido: tipoPedido,
         metodo_pago: metodoPago,
         estado_pago: tipoPedido === "mostrador" ? "pagado" : estadoPago,
-        ...(tipoPedido === "domicilio"
-          ? {
-              estado: "en_preparacion",
-            }
-          : {}),
+        estado: tipoPedido === "mostrador" ? "entregado" : "en_preparacion",
       }
 
       const { data: ventaGuardada, error } = await posSupabase.rpc(

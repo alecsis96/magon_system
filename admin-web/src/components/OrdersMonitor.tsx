@@ -157,7 +157,6 @@ function getPaymentMethodMeta(metodoPago: Pedido["metodo_pago"]) {
   if (metodoPago === "transferencia") {
     return {
       label: "Transferencia",
-      shortLabel: "Transf",
       icon: "transferencia" as const,
     }
   }
@@ -165,14 +164,12 @@ function getPaymentMethodMeta(metodoPago: Pedido["metodo_pago"]) {
   if (metodoPago === "efectivo") {
     return {
       label: "Efectivo",
-      shortLabel: "Efect",
       icon: "efectivo" as const,
     }
   }
 
   return {
     label: "Sin definir",
-    shortLabel: "N/A",
     icon: "sin_definir" as const,
   }
 }
@@ -193,28 +190,6 @@ function formatOrderDateTime(isoDateTime: Pedido["fecha_creacion"]) {
   return formatDateTime(isoDateTime, {
     fallback: "Sin fecha",
   })
-}
-
-function formatOrderStatus(estado: Pedido["estado"]) {
-  if (!estado) {
-    return "Sin estado"
-  }
-
-  if (estado === "en_preparacion") {
-    return "En preparacion"
-  }
-
-  if (estado === "en_camino") {
-    return "En camino"
-  }
-
-  if (estado === "entregado") {
-    return "Entregado"
-  }
-
-  return estado
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function isEffectivelyPaidOrder(order: Pedido) {
@@ -930,6 +905,66 @@ export function OrdersMonitor() {
                         {formatPaymentStatus(order.estado_pago)}
                       </span>
 
+                      {isHistoryView ? (
+                        <span
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700"
+                          title={`Metodo de pago: ${paymentMethodMeta.label}`}
+                          aria-label={`Metodo de pago: ${paymentMethodMeta.label}`}
+                        >
+                          {paymentMethodMeta.icon === "efectivo" ? (
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <rect x="3" y="6" width="18" height="12" rx="2" />
+                              <circle cx="12" cy="12" r="2.5" />
+                              <path d="M6 10h.01M18 14h.01" />
+                            </svg>
+                          ) : null}
+
+                          {paymentMethodMeta.icon === "transferencia" ? (
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M4 7h13" />
+                              <path d="m13 3 4 4-4 4" />
+                              <path d="M20 17H7" />
+                              <path d="m11 13-4 4 4 4" />
+                            </svg>
+                          ) : null}
+
+                          {paymentMethodMeta.icon === "sin_definir" ? (
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <circle cx="12" cy="12" r="9" />
+                              <path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-.8.7-1.7 1.2-1.7 2.2" />
+                              <path d="M12 16.5h.01" />
+                            </svg>
+                          ) : null}
+                        </span>
+                      ) : null}
+
                       {view === "active" && adminAccess.isAdmin ? (
                         <div className="relative">
                           <button
@@ -1034,92 +1069,16 @@ export function OrdersMonitor() {
                       </dd>
                     </div>
 
-                    <div className="min-w-0">
-                      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Metodo
-                      </dt>
-                      <dd
-                        className={`truncate font-semibold text-slate-900 ${
-                          isHistoryView ? "mt-0" : "mt-0.5"
-                        }`}
-                      >
-                        {isHistoryView ? (
-                          <span
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"
-                            title={`Metodo de pago: ${paymentMethodMeta.label}`}
-                            aria-label={`Metodo de pago: ${paymentMethodMeta.label}`}
-                          >
-                            {paymentMethodMeta.icon === "efectivo" ? (
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-3.5 w-3.5"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <rect x="3" y="6" width="18" height="12" rx="2" />
-                                <circle cx="12" cy="12" r="2.5" />
-                                <path d="M6 10h.01M18 14h.01" />
-                              </svg>
-                            ) : null}
-
-                            {paymentMethodMeta.icon === "transferencia" ? (
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-3.5 w-3.5"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <path d="M4 7h13" />
-                                <path d="m13 3 4 4-4 4" />
-                                <path d="M20 17H7" />
-                                <path d="m11 13-4 4 4 4" />
-                              </svg>
-                            ) : null}
-
-                            {paymentMethodMeta.icon === "sin_definir" ? (
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-3.5 w-3.5"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <circle cx="12" cy="12" r="9" />
-                                <path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-.8.7-1.7 1.2-1.7 2.2" />
-                                <path d="M12 16.5h.01" />
-                              </svg>
-                            ) : null}
-
-                            <span className="sr-only">{paymentMethodMeta.label}</span>
-                            <span className="hidden sm:inline">{paymentMethodMeta.shortLabel}</span>
-                          </span>
-                        ) : (
-                          formatPaymentMethod(order.metodo_pago)
-                        )}
-                      </dd>
-                    </div>
-
-                    {view === "history" ? (
-                      <div className="col-span-2 min-w-0">
+                    {isHistoryView ? null : (
+                      <div className="min-w-0">
                         <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          Estado pedido
+                          Metodo
                         </dt>
-                        <dd className="mt-0 truncate font-semibold text-slate-900">
-                          {formatOrderStatus(order.estado)}
+                        <dd className="mt-0.5 truncate font-semibold text-slate-900">
+                          {formatPaymentMethod(order.metodo_pago)}
                         </dd>
                       </div>
-                    ) : null}
+                    )}
 
                     {view === "history" && order.estado === "cancelado" ? (
                       <div className="col-span-2 min-w-0">

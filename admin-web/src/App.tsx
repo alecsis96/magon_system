@@ -27,6 +27,12 @@ import {
 } from "./lib/printing"
 import { getAdminAccess, type AdminAccess } from "./lib/admin"
 import { getTodayDateKey } from "./lib/datetime"
+import {
+  clearOrderCorrectionDraftFromStorage,
+  getOrderCorrectionDraftFromStorage,
+  type OrderCorrectionDraft,
+  type OrderCorrectionDraftDetail,
+} from "./lib/orderCorrectionDraft"
 import { sendDispatchPushNotification } from "./lib/push"
 import { supabase } from "./lib/supabase"
 import type {
@@ -71,6 +77,7 @@ type CartItem = {
   merma: string | null
   threeQuarterVariant: ThreeQuarterVariant | null
   manualPieceSelection: InventoryPieceKey[]
+  correctionDetail?: OrderCorrectionDraftDetail
 }
 
 type PrimaryTab = "POS" | "MONITOR"
@@ -81,6 +88,14 @@ type SecondaryTab =
   | "CLIENTES"
   | "AUDITORIA"
 type AppTab = PrimaryTab | SecondaryTab
+
+const SECONDARY_TAB_CHIPS: Array<{ id: SecondaryTab; label: string }> = [
+  { id: "INVENTARIO", label: "Inventario" },
+  { id: "PRODUCTOS", label: "Productos" },
+  { id: "CONTABILIDAD", label: "Contabilidad" },
+  { id: "CLIENTES", label: "Clientes" },
+  { id: "AUDITORIA", label: "Auditoria" },
+]
 
 const MERMA_OPTIONS = [
   "Ala quemada",
@@ -396,6 +411,52 @@ function getTodayLocalISODate() {
   return getTodayDateKey()
 }
 
+function getPiecesFromCorrectionDetail(detail: OrderCorrectionDraftDetail) {
+  const explicitPieces =
+    detail.alas +
+    detail.piernas +
+    detail.muslos +
+    detail.pechugas_grandes +
+    detail.pechugas_chicas
+
+  if (explicitPieces > 0) {
+    return explicitPieces
+  }
+
+  return Math.max(1, detail.cantidad)
+}
+
+function createCartItemFromCorrectionDetail(
+  detail: OrderCorrectionDraftDetail,
+  index: number,
+): CartItem {
+  const productId = detail.producto_id ?? `draft-${index}-${Date.now()}`
+
+  return {
+    lineId: `correction-${index}-${Date.now()}`,
+    correctionDetail: detail,
+    producto: {
+      id: productId,
+      nombre: detail.producto_nombre,
+      descripcion: detail.descripcion,
+      precio: detail.subtotal,
+      categoria: null,
+      subcategoria: null,
+      clave_inventario: detail.producto_codigo,
+      piezas_inventario: getPiecesFromCorrectionDetail(detail),
+      requiere_variante_3_4: false,
+      modo_descuento_inventario: "fijo",
+      piezas_a_seleccionar: null,
+      piezas_permitidas: null,
+      permite_repetir_piezas: true,
+      desglose_fijo: null,
+    },
+    merma: detail.merma_descripcion,
+    threeQuarterVariant: null,
+    manualPieceSelection: [],
+  }
+}
+
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
@@ -547,6 +608,8 @@ function App() {
   const [adminEmail, setAdminEmail] = useState("")
   const [adminPassword, setAdminPassword] = useState("")
   const [isSubmittingAdminAccess, setIsSubmittingAdminAccess] = useState(false)
+  const [orderCorrectionDraft, setOrderCorrectionDraft] =
+    useState<OrderCorrectionDraft | null>(null)
   const posAdminPanelRef = useRef<HTMLDivElement | null>(null)
 
   const refreshAdminAccess = useCallback(async () => {
@@ -561,6 +624,67 @@ function App() {
       setIsLoadingAdminAccess(false)
     }
   }, [])
+
+  const loadOrderCorrectionDraft = useCallback(() => {
+    setOrderCorrectionDraft(getOrderCorrectionDraftFromStorage())
+  }, [])
+
+  const applyOrderCorrectionDraftToPos = useCallback(
+    (draft: OrderCorrectionDraft) => {
+      const nextCart = draft.details.map((detail, index) =>
+        createCartItemFromCorrectionDetail(detail, index),
+      )
+
+      if (nextCart.length === 0) {
+        return
+      }
+
+      setCart(nextCart)
+      setTipoPedido(draft.tipo_pedido === "domicilio" ? "domicilio" : "mostrador")
+      setMetodoPago(
+        draft.metodo_pago === "transferencia" ? "transferencia" : "efectivo",
+      )
+      setEstadoPago(draft.estado_pago === "pendiente" ? "pendiente" : "pagado")
+
+      if (draft.customer?.id && draft.customer?.nombre && draft.customer?.telefono) {
+        setSelectedCustomer({
+          id: draft.customer.id,
+          nombre: draft.customer.nombre,
+          telefono: draft.customer.telefono,
+          url_foto_fachada: null,
+          foto_valida: false,
+          latitud: null,
+          longitud: null,
+          direccion_habitual: draft.customer.direccion_habitual,
+          referencias: draft.customer.referencias,
+          notas_entrega: draft.customer.notas_entrega,
+        })
+      } else {
+        setSelectedCustomer(null)
+      }
+
+      setIsCheckoutModalOpen(false)
+      setIsDispatchPromptOpen(false)
+      setOpenMermaItemId(null)
+    },
+    [],
+  )
+
+  const handleStartCorrectionFromMonitor = useCallback(() => {
+    const draft = getOrderCorrectionDraftFromStorage()
+
+    if (!draft) {
+      toast.error("No se encontro borrador de correccion")
+      setActiveTab("POS")
+      setIsMoreMenuOpen(false)
+      return
+    }
+
+    setOrderCorrectionDraft(draft)
+    setActiveTab("POS")
+    setIsMoreMenuOpen(false)
+    applyOrderCorrectionDraftToPos(draft)
+  }, [applyOrderCorrectionDraftToPos])
 
   const checkTodayInventoryStatus = useCallback(async (targetDate: string) => {
     try {
@@ -609,6 +733,75 @@ function App() {
       setIsCheckingInventoryStatus(false)
     }
   }, [])
+
+  useEffect(() => {
+    loadOrderCorrectionDraft()
+  }, [loadOrderCorrectionDraft])
+
+  useEffect(() => {
+    if (activeTab !== "POS") {
+      return
+    }
+
+    const draft = getOrderCorrectionDraftFromStorage()
+
+    if (!draft) {
+      return
+    }
+
+    setOrderCorrectionDraft(draft)
+
+    setCart((currentCart) => {
+      if (currentCart.length > 0) {
+        return currentCart
+      }
+
+      const nextCart = draft.details.map((detail, index) =>
+        createCartItemFromCorrectionDetail(detail, index),
+      )
+
+      if (nextCart.length === 0) {
+        return currentCart
+      }
+
+      setTipoPedido(draft.tipo_pedido === "domicilio" ? "domicilio" : "mostrador")
+      setMetodoPago(draft.metodo_pago === "transferencia" ? "transferencia" : "efectivo")
+      setEstadoPago(draft.estado_pago === "pendiente" ? "pendiente" : "pagado")
+
+      if (draft.customer?.id && draft.customer?.nombre && draft.customer?.telefono) {
+        setSelectedCustomer({
+          id: draft.customer.id,
+          nombre: draft.customer.nombre,
+          telefono: draft.customer.telefono,
+          url_foto_fachada: null,
+          foto_valida: false,
+          latitud: null,
+          longitud: null,
+          direccion_habitual: draft.customer.direccion_habitual,
+          referencias: draft.customer.referencias,
+          notas_entrega: draft.customer.notas_entrega,
+        })
+      } else {
+        setSelectedCustomer(null)
+      }
+
+      return nextCart
+    })
+  }, [activeTab])
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key) {
+        loadOrderCorrectionDraft()
+      }
+    }
+
+    window.addEventListener("storage", handleStorage)
+
+    return () => {
+      window.removeEventListener("storage", handleStorage)
+    }
+  }, [loadOrderCorrectionDraft])
 
   useEffect(() => {
     if (tipoPedido === "mostrador") {
@@ -870,6 +1063,33 @@ function handleManualPieceSelectionChange(
 
   function buildCheckoutDetails(cartItems: CartItem[]) {
     return cartItems.map((item) => {
+      if (item.correctionDetail) {
+        const detail = item.correctionDetail
+
+        return {
+          producto_uuid: isUuid(detail.producto_id ?? "") ? detail.producto_id : null,
+          producto_codigo: detail.producto_codigo,
+          producto_nombre: detail.producto_nombre,
+          descripcion: detail.descripcion,
+          cantidad: detail.cantidad,
+          precio_unitario: detail.precio_unitario,
+          subtotal: detail.subtotal,
+          piezas_inventario: getPiecesFromCorrectionDetail(detail),
+          variante_3_4: detail.variante_3_4,
+          merma_descripcion: detail.merma_descripcion,
+          alas: detail.alas,
+          piernas: detail.piernas,
+          muslos: detail.muslos,
+          pechugas_grandes: detail.pechugas_grandes,
+          pechugas_chicas: detail.pechugas_chicas,
+          merma_alas: detail.merma_alas,
+          merma_piernas: detail.merma_piernas,
+          merma_muslos: detail.merma_muslos,
+          merma_pechugas_grandes: detail.merma_pechugas_grandes,
+          merma_pechugas_chicas: detail.merma_pechugas_chicas,
+        }
+      }
+
       const detalle = getProductoDetalle(item.producto)
       const breakdown = getCartItemBreakdown(item)
       const mermaBreakdown = getCartItemMermaBreakdown(item)
@@ -996,12 +1216,13 @@ function handleManualPieceSelectionChange(
               p_total: number
               p_tipo_pedido: string
               p_metodo_pago: string
-              p_estado_pago: string
-              p_cliente_id: string | null
-              p_estado: string | null
-              p_fecha: string
-              p_detalles: ReturnType<typeof buildCheckoutDetails>
-            },
+          p_estado_pago: string
+          p_cliente_id: string | null
+          p_estado: string | null
+          p_fecha: string
+          p_pedido_corregido_de_id: string | null
+          p_detalles: ReturnType<typeof buildCheckoutDetails>
+        },
           ): Promise<{
             data: RegistrarVentaPosResult | null
             error: Error | null
@@ -1035,6 +1256,7 @@ function handleManualPieceSelectionChange(
         p_cliente_id: pedidoPayload.cliente_id ?? null,
         p_estado: pedidoPayload.estado ?? null,
         p_fecha: getTodayLocalISODate(),
+        p_pedido_corregido_de_id: orderCorrectionDraft?.original_pedido_id ?? null,
         p_detalles: checkoutDetails,
       },
       )
@@ -1096,6 +1318,10 @@ function handleManualPieceSelectionChange(
       setSelectedCustomer(null)
       setTipoPedido("mostrador")
       setMetodoPago("efectivo")
+      if (orderCorrectionDraft) {
+        clearOrderCorrectionDraftFromStorage()
+        setOrderCorrectionDraft(null)
+      }
       showSaleSuccessToast(total, piezasInventario, dispatchStatus)
     } catch (error) {
       console.error("Error al registrar la venta:", error)
@@ -1197,6 +1423,9 @@ function handleManualPieceSelectionChange(
     activeTab === "CLIENTES" ||
     activeTab === "AUDITORIA" ||
     isMoreMenuOpen
+  const correctionBannerText = orderCorrectionDraft
+    ? `Corrigiendo pedido ${orderCorrectionDraft.short_order_id}`
+    : null
   const adminAvatarRingClass = adminAccess.isAdmin
     ? "ring-emerald-500"
     : adminAccess.isAuthenticated
@@ -1363,6 +1592,56 @@ function handleManualPieceSelectionChange(
           </section>
         ) : null}
 
+        {activeTab === "POS" && correctionBannerText ? (
+          <section className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-3.5 py-2.5 shadow-sm sm:px-4 sm:py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                {correctionBannerText}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  clearOrderCorrectionDraftFromStorage()
+                  setOrderCorrectionDraft(null)
+                  toast("Borrador de correccion descartado", { icon: "i" })
+                }}
+                className="rounded-xl border border-sky-300 bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 transition hover:bg-sky-100 focus:outline-none focus:ring-4 focus:ring-sky-100"
+              >
+                Limpiar
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        <section className="mb-4">
+          <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
+            <div className="flex min-w-max items-center gap-2">
+              {SECONDARY_TAB_CHIPS.map((tab) => {
+                const isActive = activeTab === tab.id
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(tab.id)
+                      setIsMoreMenuOpen(false)
+                    }}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-4 ${
+                      isActive
+                        ? "border-slate-900 bg-slate-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)] focus:ring-slate-200"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 focus:ring-slate-100"
+                    }`}
+                    aria-pressed={isActive}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+
         {activeTab === "POS" ? (
           <>
             <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden md:flex-row">
@@ -1493,13 +1772,13 @@ function handleManualPieceSelectionChange(
                           const detalle = getProductoDetalle(item.producto)
                           const showMermaPanel = openMermaItemId === item.lineId
                           const showThreeQuarterSelector =
-                            isThreeQuarterProduct(item.producto)
+                            !item.correctionDetail && isThreeQuarterProduct(item.producto)
                           const manualPieceRequirement = getManualPieceRequirement(
                             item.producto,
                           )
                           const manualConfig = getInventoryDiscountConfig(item.producto)
                           const showManualPieceSelector =
-                            manualPieceRequirement !== null
+                            !item.correctionDetail && manualPieceRequirement !== null
                           const selectedCompositionLabel = getManualSelectionLabel(
                             item.manualPieceSelection,
                           )
@@ -1520,6 +1799,11 @@ function handleManualPieceSelectionChange(
                                   {detalle.desglose ? (
                                     <p className="mt-1 text-xs text-slate-400">
                                       Desglose: {detalle.desglose}
+                                    </p>
+                                  ) : null}
+                                  {item.correctionDetail ? (
+                                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
+                                      Item recuperado del pedido original
                                     </p>
                                   ) : null}
                                   {showThreeQuarterSelector &&
@@ -1821,7 +2105,7 @@ function handleManualPieceSelectionChange(
             ) : null}
           </>
         ) : activeTab === "MONITOR" ? (
-          <OrdersMonitor />
+          <OrdersMonitor onStartCorrection={handleStartCorrectionFromMonitor} />
         ) : activeTab === "CLIENTES" ? (
           <div className="-mx-4 -mb-4 sm:-mx-6">
             <AdminClientes />
@@ -1846,13 +2130,7 @@ function handleManualPieceSelectionChange(
 
       {isMoreMenuOpen ? (
         <div className="fixed inset-x-4 bottom-24 z-50 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:inset-x-auto sm:right-6 sm:w-[18rem] sm:bottom-28">
-          {([
-            { id: "INVENTARIO", label: "Inventario" },
-            { id: "PRODUCTOS", label: "Productos" },
-            { id: "CONTABILIDAD", label: "Contabilidad" },
-            { id: "CLIENTES", label: "Clientes" },
-            { id: "AUDITORIA", label: "Auditoria" },
-          ] as const).map((tab) => {
+          {SECONDARY_TAB_CHIPS.map((tab) => {
             const isActive = activeTab === tab.id
 
             return (

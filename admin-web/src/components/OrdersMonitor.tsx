@@ -228,6 +228,35 @@ function canSupervisedCorrectHistoryOrder(order: OrderWithClient) {
   return (order.estado?.trim().toLowerCase() ?? "") === "entregado"
 }
 
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = error.message
+
+    if (typeof message === "string" && message.trim()) {
+      return message
+    }
+  }
+
+  return "No se pudo completar la operacion"
+}
+
+function isMissingSupervisedCorrectionRpcError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false
+  }
+
+  const code = "code" in error ? String(error.code ?? "") : ""
+  const message = getErrorMessage(error).toLowerCase()
+
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    message.includes("cancelar_pedido_para_correccion_supervisada") ||
+    message.includes("could not find the function") ||
+    message.includes("function") && message.includes("does not exist")
+  )
+}
+
 function formatVariantLabel(variante: PedidoDetalle["variante_3_4"]) {
   const sanitizedVariant = variante?.trim()
 
@@ -823,7 +852,10 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
       return
     }
 
-    if (!canSupervisedCorrectHistoryOrder(order)) {
+    const normalizedStatus = order.estado?.trim().toLowerCase() ?? ""
+    const isDeliveredOrder = normalizedStatus === "entregado"
+
+    if (!isDeliveredOrder) {
       toast.error("Este pedido no es elegible para correccion supervisada")
       return
     }
@@ -855,6 +887,8 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
     try {
       setProcessingOrderId(order.id)
 
+      let result: CancelarPedidoParaCorreccionSupervisadaResult | null = null
+
       const { data, error } = await supabase.rpc(
         "cancelar_pedido_para_correccion_supervisada",
         {
@@ -864,10 +898,40 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
       )
 
       if (error) {
-        throw error
-      }
+        if (!isMissingSupervisedCorrectionRpcError(error)) {
+          throw error
+        }
 
-      const result = data as CancelarPedidoParaCorreccionSupervisadaResult | null
+        if (isDeliveredOrder) {
+          throw new Error(
+            "Falta una migracion en la base de datos: no existe la RPC cancelar_pedido_para_correccion_supervisada. Ejecuta las migraciones pendientes para corregir pedidos entregados.",
+          )
+        }
+
+        const fallback = await supabase.rpc("cancelar_pedido_para_correccion", {
+          p_pedido_id: order.id,
+          p_motivo: trimmedReason,
+        })
+
+        if (fallback.error) {
+          throw fallback.error
+        }
+
+        const fallbackResult = fallback.data as CancelarPedidoParaCorreccionResult | null
+
+        if (!fallbackResult?.ok) {
+          throw new Error("No se pudo ejecutar la correccion con RPC de respaldo")
+        }
+
+        result = {
+          ...fallbackResult,
+          supervisada: false,
+          ya_cancelado: false,
+          estado_previo: order.estado ?? null,
+        } as CancelarPedidoParaCorreccionSupervisadaResult
+      } else {
+        result = data as CancelarPedidoParaCorreccionSupervisadaResult | null
+      }
 
       if (!result?.ok) {
         throw new Error("No se pudo ejecutar la correccion supervisada")
@@ -930,6 +994,20 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
 
   const isLoading = view === "active" ? isLoadingActive : isLoadingHistory
   const ordersToRender = view === "active" ? activeOrders : historyOrders
+  const replacementOrderByOriginalId = useMemo(() => {
+    const replacements = new Map<string, string>()
+
+    for (const order of historyOrders) {
+      const originalOrderId = order.pedido_corregido_de_id?.trim()
+
+      if (originalOrderId) {
+        replacements.set(originalOrderId, order.id)
+      }
+    }
+
+    return replacements
+  }, [historyOrders])
+
   const historySummary = useMemo(() => {
     if (view !== "history") {
       return null
@@ -1227,6 +1305,11 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
               const cancelReason = order.motivo_cancelacion?.trim() || null
               const paymentMethodMeta = getPaymentMethodMeta(order.metodo_pago)
               const isHistoryView = view === "history"
+              const replacedByOrderId = isHistoryView
+                ? replacementOrderByOriginalId.get(order.id) ?? null
+                : null
+              const replacesOrderId = order.pedido_corregido_de_id?.trim() || null
+              const hasCorrectionLinkage = Boolean(replacesOrderId || replacedByOrderId)
 
               return (
                 <article
@@ -1360,6 +1443,21 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
                   >
                     {customerName}
                   </h3>
+
+                  {isHistoryView && hasCorrectionLinkage ? (
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700">
+                        Corregido
+                      </span>
+                      <p className="min-w-0 truncate text-[10px] font-semibold text-slate-600">
+                        {replacesOrderId ? `Reemplaza ${getShortOrderId(replacesOrderId)}` : ""}
+                        {replacesOrderId && replacedByOrderId ? " - " : ""}
+                        {replacedByOrderId
+                          ? `Reemplazado por ${getShortOrderId(replacedByOrderId)}`
+                          : ""}
+                      </p>
+                    </div>
+                  ) : null}
 
                   <dl
                     className={`grid grid-cols-2 text-xs ${

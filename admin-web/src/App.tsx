@@ -517,6 +517,26 @@ function isMissingTodayInventoryError(message: string) {
   )
 }
 
+function isMissingInventoryStockColumnsError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false
+  }
+
+  const code = "code" in error ? String(error.code ?? "") : ""
+  const message = getErrorMessage(error).toLowerCase()
+
+  return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    message.includes("stock_alas") ||
+    message.includes("stock_piernas") ||
+    message.includes("stock_muslos") ||
+    message.includes("stock_pechugas_g") ||
+    message.includes("stock_pechugas_c") ||
+    message.includes("column") && message.includes("does not exist")
+  )
+}
+
 function VentaIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -690,20 +710,36 @@ function App() {
     try {
       setIsCheckingInventoryStatus(true)
 
-      const { data, error } = await supabase
+      const inventorySelectFields =
+        "id,stock_alas,stock_piernas,stock_muslos,stock_pechugas_g,stock_pechugas_c,min_alas,min_piernas,min_muslos,min_pechugas_g,min_pechugas_c"
+      let response = await supabase
         .from("inventario_diario")
-        .select(
-          "id,stock_alas,stock_piernas,stock_muslos,stock_pechugas_g,stock_pechugas_c,min_alas,min_piernas,min_muslos,min_pechugas_g,min_pechugas_c",
-        )
+        .select(inventorySelectFields)
         .eq("fecha", targetDate)
         .maybeSingle()
 
-      if (error) {
-        throw error
+      if (response.error && isMissingInventoryStockColumnsError(response.error)) {
+        response = await supabase
+          .from("inventario_diario")
+          .select("id")
+          .eq("fecha", targetDate)
+          .maybeSingle()
       }
+
+      if (response.error) {
+        throw response.error
+      }
+
+      const data = response.data
 
       if (!data?.id) {
         setIsInventoryReadyForToday(false)
+        setLowStockPieceNames([])
+        return
+      }
+
+      if (!("stock_alas" in data)) {
+        setIsInventoryReadyForToday(true)
         setLowStockPieceNames([])
         return
       }

@@ -11,6 +11,7 @@ import { sendDispatchPushNotification } from "../lib/push"
 import { supabase } from "../lib/supabase"
 import type {
   CancelarPedidoParaCorreccionResult,
+  CancelarPedidoParaCorreccionSupervisadaResult,
   CancelarPedidoEmpleadoResult,
   Cliente,
   EliminarPedidoAdminResult,
@@ -221,6 +222,10 @@ function isEffectivelyPaidOrder(order: Pedido) {
 
 function canCancelOrder(order: OrderWithClient) {
   return !isHistoryOrderStatus(order.estado)
+}
+
+function canSupervisedCorrectHistoryOrder(order: OrderWithClient) {
+  return (order.estado?.trim().toLowerCase() ?? "") === "entregado"
 }
 
 function formatVariantLabel(variante: PedidoDetalle["variante_3_4"]) {
@@ -802,6 +807,122 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
     } catch (error) {
       console.error("Error al preparar correccion:", error)
       toast.error(error instanceof Error ? error.message : "No se pudo corregir el pedido")
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+
+  async function handleSupervisedHistoryCorrection(order: OrderWithClient) {
+    if (!adminAccess.isAuthenticated) {
+      toast.error("Debes iniciar sesion como administrador")
+      return
+    }
+
+    if (!adminAccess.isAdmin) {
+      toast.error("Solo un administrador puede corregir pedidos entregados")
+      return
+    }
+
+    if (!canSupervisedCorrectHistoryOrder(order)) {
+      toast.error("Este pedido no es elegible para correccion supervisada")
+      return
+    }
+
+    const reason = window.prompt(
+      `Motivo obligatorio para correccion supervisada de ${getShortOrderId(order.id)}:`,
+      "",
+    )
+
+    if (reason === null) {
+      return
+    }
+
+    const trimmedReason = reason.trim()
+
+    if (trimmedReason.length < 4) {
+      toast.error("Escribe un motivo de al menos 4 caracteres")
+      return
+    }
+
+    const confirmed = window.confirm(
+      `ADVERTENCIA: esta correccion supervisada cancelara el pedido entregado ${getShortOrderId(order.id)}.\n\nImpacto:\n- Revertira inventario historico del dia del pedido (con fallback seguro).\n- Afectara reportes historicos y trazabilidad de ventas.\n- Se registrara auditoria con el motivo indicado.\n\nMotivo: ${trimmedReason}\n\nDeseas continuar?`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setProcessingOrderId(order.id)
+
+      const { data, error } = await supabase.rpc(
+        "cancelar_pedido_para_correccion_supervisada",
+        {
+          p_pedido_id: order.id,
+          p_motivo: trimmedReason,
+        },
+      )
+
+      if (error) {
+        throw error
+      }
+
+      const result = data as CancelarPedidoParaCorreccionSupervisadaResult | null
+
+      if (!result?.ok) {
+        throw new Error("No se pudo ejecutar la correccion supervisada")
+      }
+
+      const details = (order.pedido_detalles ?? []).map((detail) =>
+        mapPedidoDetalleToCorrectionDraftDetail(detail),
+      )
+
+      if (details.length === 0) {
+        throw new Error("El pedido no tiene detalles para corregir")
+      }
+
+      saveOrderCorrectionDraftToStorage({
+        original_pedido_id: order.id,
+        short_order_id: getShortOrderId(order.id),
+        created_at: new Date().toISOString(),
+        tipo_pedido: order.tipo_pedido,
+        metodo_pago: order.metodo_pago,
+        estado_pago: order.estado_pago,
+        customer: {
+          id: order.cliente_id,
+          nombre: order.clientes?.nombre ?? null,
+          telefono: order.clientes?.telefono ?? null,
+          direccion_habitual: order.clientes?.direccion_habitual ?? null,
+          referencias: order.clientes?.referencias ?? null,
+          notas_entrega: order.clientes?.notas_entrega ?? null,
+        },
+        notas: order.clientes?.notas_entrega ?? null,
+        details,
+      })
+
+      await Promise.all([
+        loadActiveOrders(false),
+        loadHistoryOrders(false, historyDayFilter),
+        loadTodayDashboardOrders(),
+      ])
+
+      if (result.reversion_inventario_aplicada === false) {
+        toast(
+          `Pedido cancelado para correccion supervisada sin reversa de inventario: ${result.motivo_reversion_inventario ?? "Sin detalle"}`,
+          { icon: "!" },
+        )
+      } else {
+        toast.success("Pedido historico listo para correccion supervisada en POS")
+      }
+
+      onStartCorrection?.()
+    } catch (error) {
+      console.error("Error en correccion supervisada:", error)
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "No se pudo preparar la correccion supervisada",
+      )
     } finally {
       setProcessingOrderId(null)
     }
@@ -1392,14 +1513,27 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
                     ) : null}
 
                     {adminAccess.isAdmin && view === "history" ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteOrder(order, view)}
-                        disabled={isProcessing}
-                        className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        {view === "history" ? "Eliminar registro" : "Eliminar pedido"}
-                      </button>
+                      <>
+                        {canSupervisedCorrectHistoryOrder(order) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleSupervisedHistoryCorrection(order)}
+                            disabled={isProcessing}
+                            className="w-full rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[13px] font-bold text-sky-800 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Corregir (supervisada)
+                          </button>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteOrder(order, view)}
+                          disabled={isProcessing}
+                          className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          {view === "history" ? "Eliminar registro" : "Eliminar pedido"}
+                        </button>
+                      </>
                     ) : null}
                   </div>
                 </article>

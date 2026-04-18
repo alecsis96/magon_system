@@ -683,6 +683,35 @@ export interface CancelarPedidoParaCorreccionResult extends Record<string, unkno
     pechugas_chicas: number;
   };
 }
+export interface CancelarPedidoParaCorreccionSupervisadaResult
+  extends Record<string, unknown> {
+  ok: boolean;
+  pedido: Pedido;
+  inventory_id: UUID | null;
+  audit_event_id?: UUID | null;
+  motivo_cancelacion: string;
+  reversion_inventario_aplicada: boolean;
+  motivo_reversion_inventario?: string | null;
+  supervisada: boolean;
+  ya_cancelado: boolean;
+  estado_previo: string | null;
+  piezas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+  mermas_revertidas: {
+    total: number;
+    alas: number;
+    piernas: number;
+    muslos: number;
+    pechugas_grandes: number;
+    pechugas_chicas: number;
+  };
+}
 export interface ClienteFrecuenciaMensualRpc extends Record<string, unknown> {
   cliente_id: UUID;
   nombre: string;
@@ -809,6 +838,13 @@ export interface Database {
           p_motivo?: string;
         };
         Returns: CancelarPedidoParaCorreccionResult;
+      };
+      cancelar_pedido_para_correccion_supervisada: {
+        Args: {
+          p_pedido_id: UUID;
+          p_motivo: string;
+        };
+        Returns: CancelarPedidoParaCorreccionSupervisadaResult;
       };
       es_usuario_admin: {
         Args: Record<string, never>;

@@ -21,7 +21,7 @@ export async function sendDispatchPushNotification(payload: PushPayload) {
   }
 
   if (!session?.access_token) {
-    throw new Error("Debes iniciar sesion como administrador para enviar notificaciones")
+    throw new Error("Debes iniciar sesion para enviar notificaciones")
   }
 
   const { data, error } = await supabase

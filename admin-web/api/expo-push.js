@@ -66,36 +66,34 @@ function validateMessages(messages) {
   return null
 }
 
-async function validateAdminSession(accessToken) {
+async function validateAuthenticatedSession(accessToken) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error("Supabase server env missing for push proxy")
   }
 
-  const adminCheckResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/es_usuario_admin`, {
-    method: "POST",
+  const sessionCheckResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    method: "GET",
     headers: {
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
     },
-    body: "{}",
   })
 
-  if (!adminCheckResponse.ok) {
+  if (!sessionCheckResponse.ok) {
     return { ok: false, status: 401, error: "Sesion invalida o expirada" }
   }
 
-  const responseText = await adminCheckResponse.text()
-  let isAdmin = false
+  const responseText = await sessionCheckResponse.text()
+  let user = null
 
   try {
-    isAdmin = Boolean(responseText ? JSON.parse(responseText) : false)
+    user = responseText ? JSON.parse(responseText) : null
   } catch {
-    return { ok: false, status: 500, error: "No se pudo validar permisos de administrador" }
+    return { ok: false, status: 500, error: "No se pudo validar la sesion" }
   }
 
-  if (!isAdmin) {
-    return { ok: false, status: 403, error: "Solo administradores pueden enviar notificaciones" }
+  if (!user?.id) {
+    return { ok: false, status: 401, error: "Sesion invalida o expirada" }
   }
 
   return { ok: true }
@@ -122,7 +120,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: "Too many requests. Try again in a minute" })
   }
 
-  const sessionValidation = await validateAdminSession(accessToken)
+  const sessionValidation = await validateAuthenticatedSession(accessToken)
 
   if (!sessionValidation.ok) {
     return res.status(sessionValidation.status).json({ error: sessionValidation.error })

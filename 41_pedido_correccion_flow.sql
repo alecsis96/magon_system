@@ -39,6 +39,8 @@ declare
     v_detalle jsonb;
     v_pedido public.pedidos%rowtype;
     v_pedido_original public.pedidos%rowtype;
+    v_fecha_creacion_objetivo timestamptz;
+    v_fecha_inventario_objetivo date;
     v_ventas_alas int := 0;
     v_ventas_piernas int := 0;
     v_ventas_muslos int := 0;
@@ -72,16 +74,23 @@ begin
         if not found then
             raise exception 'No se encontro el pedido original a corregir';
         end if;
+
+        v_fecha_creacion_objetivo := coalesce(v_pedido_original.fecha_creacion, now());
+        v_fecha_inventario_objetivo :=
+            (v_fecha_creacion_objetivo at time zone 'America/Mexico_City')::date;
+    else
+        v_fecha_creacion_objetivo := now();
+        v_fecha_inventario_objetivo := coalesce(p_fecha, current_date);
     end if;
 
     select *
     into v_inventory
     from public.inventario_diario
-    where fecha = p_fecha
+    where fecha = v_fecha_inventario_objetivo
     for update;
 
     if not found then
-        raise exception 'Inventario de hoy no iniciado';
+        raise exception 'Inventario del dia no iniciado';
     end if;
 
     insert into public.pedidos (
@@ -91,7 +100,8 @@ begin
         tipo_pedido,
         total,
         metodo_pago,
-        estado_pago
+        estado_pago,
+        fecha_creacion
     )
     values (
         p_pedido_corregido_de_id,
@@ -103,7 +113,8 @@ begin
         p_tipo_pedido,
         p_total,
         p_metodo_pago,
-        p_estado_pago
+        p_estado_pago,
+        v_fecha_creacion_objetivo
     )
     returning * into v_pedido;
 

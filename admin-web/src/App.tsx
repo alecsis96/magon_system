@@ -26,7 +26,7 @@ import {
   type PrintableOrder,
 } from "./lib/printing"
 import { getAdminAccess, type AdminAccess } from "./lib/admin"
-import { getTodayDateKey } from "./lib/datetime"
+import { getTodayDateKey, toDateKey } from "./lib/datetime"
 import {
   clearOrderCorrectionDraftFromStorage,
   getOrderCorrectionDraftFromStorage,
@@ -411,6 +411,22 @@ function getTodayLocalISODate() {
   return getTodayDateKey()
 }
 
+function getCheckoutInventoryDate(correctionDraft: OrderCorrectionDraft | null) {
+  if (!correctionDraft?.original_fecha_creacion) {
+    return getTodayLocalISODate()
+  }
+
+  const parsedOriginalDateKey = toDateKey(correctionDraft.original_fecha_creacion)
+  return parsedOriginalDateKey || getTodayLocalISODate()
+}
+
+function formatNowForDateTimeLocalInput() {
+  const now = new Date()
+  now.setSeconds(0, 0)
+  const localMillis = now.getTime() - now.getTimezoneOffset() * 60000
+  return new Date(localMillis).toISOString().slice(0, 16)
+}
+
 function getPiecesFromCorrectionDetail(detail: OrderCorrectionDraftDetail) {
   const explicitPieces =
     detail.alas +
@@ -619,6 +635,7 @@ function App() {
   const [todayIsoDate, setTodayIsoDate] = useState(getTodayLocalISODate())
   const [isInventoryReadyForToday, setIsInventoryReadyForToday] =
     useState<boolean>(true)
+  const [totalAvailablePieces, setTotalAvailablePieces] = useState<number | null>(null)
   const [lowStockPieceNames, setLowStockPieceNames] = useState<string[]>([])
   const [isCheckingInventoryStatus, setIsCheckingInventoryStatus] =
     useState<boolean>(true)
@@ -630,6 +647,11 @@ function App() {
   const [isSubmittingAdminAccess, setIsSubmittingAdminAccess] = useState(false)
   const [orderCorrectionDraft, setOrderCorrectionDraft] =
     useState<OrderCorrectionDraft | null>(null)
+  const [isRetroactiveModeEnabled, setIsRetroactiveModeEnabled] = useState(false)
+  const [retroactiveDateTimeLocal, setRetroactiveDateTimeLocal] = useState(
+    formatNowForDateTimeLocalInput,
+  )
+  const [retroactiveReason, setRetroactiveReason] = useState("")
   const posAdminPanelRef = useRef<HTMLDivElement | null>(null)
 
   const refreshAdminAccess = useCallback(async () => {
@@ -686,6 +708,9 @@ function App() {
       setIsCheckoutModalOpen(false)
       setIsDispatchPromptOpen(false)
       setOpenMermaItemId(null)
+      setIsRetroactiveModeEnabled(false)
+      setRetroactiveDateTimeLocal(formatNowForDateTimeLocalInput())
+      setRetroactiveReason("")
     },
     [],
   )
@@ -734,18 +759,29 @@ function App() {
 
       if (!data?.id) {
         setIsInventoryReadyForToday(false)
+        setTotalAvailablePieces(null)
         setLowStockPieceNames([])
         return
       }
 
       if (!("stock_alas" in data)) {
         setIsInventoryReadyForToday(true)
+        setTotalAvailablePieces(null)
         setLowStockPieceNames([])
         return
       }
 
       const inventory = data as InventarioDiario
       setIsInventoryReadyForToday(true)
+      setTotalAvailablePieces(
+        ALL_PIECE_KEYS.reduce((sum, pieceKey) => {
+          const stockField = PIECE_STOCK_FIELD_MAP[pieceKey]
+          const stockValue =
+            typeof inventory[stockField] === "number" ? Math.round(inventory[stockField]) : 0
+
+          return sum + Math.max(0, stockValue)
+        }, 0),
+      )
 
       const lowStock = ALL_PIECE_KEYS.filter((pieceKey) => {
         const stockField = PIECE_STOCK_FIELD_MAP[pieceKey]
@@ -764,6 +800,7 @@ function App() {
     } catch (error) {
       console.error("Error al validar inventario del dia:", error)
       setIsInventoryReadyForToday(true)
+      setTotalAvailablePieces(null)
       setLowStockPieceNames([])
     } finally {
       setIsCheckingInventoryStatus(false)
@@ -1202,6 +1239,30 @@ function handleManualPieceSelectionChange(
       return false
     }
 
+    if (isRetroactiveModeEnabled) {
+      if (!adminAccess.isAdmin) {
+        toast.error("Solo un administrador puede registrar ventas retroactivas")
+        return false
+      }
+
+      if (orderCorrectionDraft) {
+        toast.error("No se puede combinar correccion con venta retroactiva")
+        return false
+      }
+
+      const parsedTargetDate = new Date(retroactiveDateTimeLocal)
+
+      if (!retroactiveDateTimeLocal || Number.isNaN(parsedTargetDate.getTime())) {
+        toast.error("Selecciona una fecha y hora valida para la venta retroactiva")
+        return false
+      }
+
+      if (retroactiveReason.trim().length < 4) {
+        toast.error("Escribe un motivo retroactivo de al menos 4 caracteres")
+        return false
+      }
+    }
+
     return true
   }
 
@@ -1264,6 +1325,23 @@ function handleManualPieceSelectionChange(
             error: Error | null
           }>
           (
+            fn: "registrar_venta_pos_retroactiva_supervisada",
+            args: {
+              p_total: number
+              p_tipo_pedido: string
+              p_metodo_pago: string
+              p_estado_pago: string
+              p_cliente_id: string | null
+              p_estado: string | null
+              p_fecha_hora_objetivo: string
+              p_motivo: string
+              p_detalles: ReturnType<typeof buildCheckoutDetails>
+            },
+          ): Promise<{
+            data: RegistrarVentaPosResult | null
+            error: Error | null
+          }>
+          (
             fn: "get_printable_order",
             args: { p_pedido_id: string },
           ): Promise<{
@@ -1281,21 +1359,36 @@ function handleManualPieceSelectionChange(
         estado_pago: tipoPedido === "mostrador" ? "pagado" : estadoPago,
         estado: tipoPedido === "mostrador" ? "entregado" : "en_preparacion",
       }
+      const checkoutInventoryDate = getCheckoutInventoryDate(orderCorrectionDraft)
+      const isRetroactiveCheckout = isRetroactiveModeEnabled && !orderCorrectionDraft
+      const retroactiveTargetIso = isRetroactiveCheckout
+        ? new Date(retroactiveDateTimeLocal).toISOString()
+        : null
+      const retroactiveReasonTrimmed = retroactiveReason.trim()
 
-      const { data: ventaGuardada, error } = await posSupabase.rpc(
-        "registrar_venta_pos",
-        {
-        p_total: pedidoPayload.total,
-        p_tipo_pedido: pedidoPayload.tipo_pedido,
-        p_metodo_pago: pedidoPayload.metodo_pago ?? "efectivo",
-        p_estado_pago: pedidoPayload.estado_pago,
-        p_cliente_id: pedidoPayload.cliente_id ?? null,
-        p_estado: pedidoPayload.estado ?? null,
-        p_fecha: getTodayLocalISODate(),
-        p_pedido_corregido_de_id: orderCorrectionDraft?.original_pedido_id ?? null,
-        p_detalles: checkoutDetails,
-      },
-      )
+      const { data: ventaGuardada, error } = isRetroactiveCheckout
+        ? await posSupabase.rpc("registrar_venta_pos_retroactiva_supervisada", {
+            p_total: pedidoPayload.total,
+            p_tipo_pedido: pedidoPayload.tipo_pedido,
+            p_metodo_pago: pedidoPayload.metodo_pago ?? "efectivo",
+            p_estado_pago: pedidoPayload.estado_pago,
+            p_cliente_id: pedidoPayload.cliente_id ?? null,
+            p_estado: pedidoPayload.estado ?? null,
+            p_fecha_hora_objetivo: retroactiveTargetIso ?? new Date().toISOString(),
+            p_motivo: retroactiveReasonTrimmed,
+            p_detalles: checkoutDetails,
+          })
+        : await posSupabase.rpc("registrar_venta_pos", {
+            p_total: pedidoPayload.total,
+            p_tipo_pedido: pedidoPayload.tipo_pedido,
+            p_metodo_pago: pedidoPayload.metodo_pago ?? "efectivo",
+            p_estado_pago: pedidoPayload.estado_pago,
+            p_cliente_id: pedidoPayload.cliente_id ?? null,
+            p_estado: pedidoPayload.estado ?? null,
+            p_fecha: checkoutInventoryDate,
+            p_pedido_corregido_de_id: orderCorrectionDraft?.original_pedido_id ?? null,
+            p_detalles: checkoutDetails,
+          })
 
       if (error) {
         throw error
@@ -1333,7 +1426,7 @@ function handleManualPieceSelectionChange(
         toast.error("Venta guardada, pero no se pudo imprimir el ticket")
       }
 
-      if (tipoPedido === "domicilio" && sendDispatchNotification) {
+      if (tipoPedido === "domicilio" && sendDispatchNotification && !isRetroactiveCheckout) {
         try {
           await notifyDispatchAfterCheckout(
             ventaGuardada.pedido_id,
@@ -1354,6 +1447,9 @@ function handleManualPieceSelectionChange(
       setSelectedCustomer(null)
       setTipoPedido("mostrador")
       setMetodoPago("efectivo")
+      setIsRetroactiveModeEnabled(false)
+      setRetroactiveDateTimeLocal(formatNowForDateTimeLocalInput())
+      setRetroactiveReason("")
       if (orderCorrectionDraft) {
         clearOrderCorrectionDraftFromStorage()
         setOrderCorrectionDraft(null)
@@ -1400,6 +1496,11 @@ function handleManualPieceSelectionChange(
 
   function handleCheckoutPress() {
     if (!validateCheckout()) {
+      return
+    }
+
+    if (isRetroactiveModeEnabled) {
+      void handleCheckout(false)
       return
     }
 
@@ -1472,114 +1573,134 @@ function handleManualPieceSelectionChange(
     : adminAccess.isAuthenticated
       ? "bg-amber-400"
       : "bg-gray-300"
+  const inventoryBadgeToneClass =
+    totalAvailablePieces == null
+      ? "border-slate-200 bg-white text-slate-500"
+      : lowStockPieceNames.length > 0
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : "border-emerald-200 bg-emerald-50 text-emerald-700"
 
   const posHeaderAdminAction = (
-    <div className="relative" ref={posAdminPanelRef}>
-      <button
-        type="button"
-        onClick={() => setIsPosAdminPanelOpen((current) => !current)}
-        className={`relative inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm ring-2 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 ${adminAvatarRingClass}`}
-        aria-label="Abrir acceso de administrador"
-        aria-expanded={isPosAdminPanelOpen}
+    <div className="flex items-center gap-2">
+      <div
+        className={`inline-flex min-h-11 items-center rounded-full border px-3 py-2 text-right shadow-sm ${inventoryBadgeToneClass}`}
+        title="Existencia total disponible en inventario del dia"
       >
-        <span className="text-sm font-black uppercase" aria-hidden="true">
-          {adminAccess.email?.[0]?.toUpperCase() ?? "A"}
-        </span>
-        <span
-          className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${adminAvatarStatusClass}`}
-          aria-hidden="true"
-        />
-      </button>
-
-      {isPosAdminPanelOpen ? (
-        <div className="absolute right-0 top-[calc(100%+0.55rem)] z-30 w-[min(92vw,18rem)] rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-[0_20px_45px_rgba(15,23,42,0.18)]">
-          {adminAccess.isAuthenticated ? (
-            <div className="space-y-3">
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Cuenta actual
-                </p>
-                <p className="mt-1.5 text-sm font-bold text-slate-900">
-                  {adminAccess.email ?? "Sin correo"}
-                </p>
-                <p
-                  className={`mt-2 text-xs font-semibold ${
-                    adminAccess.isAdmin ? "text-emerald-600" : "text-amber-600"
-                  }`}
-                >
-                  {adminAccess.isAdmin
-                    ? "Permisos de administrador verificados"
-                    : "Sesion iniciada, pero sin permisos de administrador"}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void handleAdminLogout()}
-                disabled={isSubmittingAdminAccess}
-                className="w-full rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
-              >
-                {isSubmittingAdminAccess ? "Cerrando sesion..." : "Cerrar sesion"}
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div>
-                <label
-                  htmlFor="admin-email"
-                  className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Correo
-                </label>
-                <input
-                  id="admin-email"
-                  type="email"
-                  value={adminEmail}
-                  onChange={(event) => setAdminEmail(event.target.value)}
-                  autoComplete="email"
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="admin-password"
-                  className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
-                >
-                  Contrasena
-                </label>
-                <input
-                  id="admin-password"
-                  type="password"
-                  value={adminPassword}
-                  onChange={(event) => setAdminPassword(event.target.value)}
-                  autoComplete="current-password"
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void handleAdminLogin()}
-                disabled={isSubmittingAdminAccess}
-                className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
-              >
-                {isSubmittingAdminAccess ? "Entrando..." : "Entrar como admin"}
-              </button>
-            </div>
-          )}
-
-          <p className="mt-2 text-[11px] text-slate-500">
-            {isLoadingAdminAccess
-              ? "Validando estado de sesion..."
-              : adminAccess.isAdmin
-                ? "Admin activo"
-                : adminAccess.isAuthenticated
-                  ? "Sesion iniciada sin rol admin"
-                  : "Sin sesion admin"}
+        <div>
+          <p className="text-[9px] font-semibold uppercase tracking-[0.18em]">Stock</p>
+          <p className="text-sm font-black leading-none">
+            {totalAvailablePieces == null ? "--" : `${totalAvailablePieces} pzs`}
           </p>
         </div>
-      ) : null}
+      </div>
+
+      <div className="relative" ref={posAdminPanelRef}>
+        <button
+          type="button"
+          onClick={() => setIsPosAdminPanelOpen((current) => !current)}
+          className={`relative inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm ring-2 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 ${adminAvatarRingClass}`}
+          aria-label="Abrir acceso de administrador"
+          aria-expanded={isPosAdminPanelOpen}
+        >
+          <span className="text-sm font-black uppercase" aria-hidden="true">
+            {adminAccess.email?.[0]?.toUpperCase() ?? "A"}
+          </span>
+          <span
+            className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${adminAvatarStatusClass}`}
+            aria-hidden="true"
+          />
+        </button>
+
+        {isPosAdminPanelOpen ? (
+          <div className="absolute right-0 top-[calc(100%+0.55rem)] z-30 w-[min(92vw,18rem)] rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-[0_20px_45px_rgba(15,23,42,0.18)]">
+            {adminAccess.isAuthenticated ? (
+              <div className="space-y-3">
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Cuenta actual
+                  </p>
+                  <p className="mt-1.5 text-sm font-bold text-slate-900">
+                    {adminAccess.email ?? "Sin correo"}
+                  </p>
+                  <p
+                    className={`mt-2 text-xs font-semibold ${
+                      adminAccess.isAdmin ? "text-emerald-600" : "text-amber-600"
+                    }`}
+                  >
+                    {adminAccess.isAdmin
+                      ? "Permisos de administrador verificados"
+                      : "Sesion iniciada, pero sin permisos de administrador"}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleAdminLogout()}
+                  disabled={isSubmittingAdminAccess}
+                  className="w-full rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                >
+                  {isSubmittingAdminAccess ? "Cerrando sesion..." : "Cerrar sesion"}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="admin-email"
+                    className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
+                  >
+                    Correo
+                  </label>
+                  <input
+                    id="admin-email"
+                    type="email"
+                    value={adminEmail}
+                    onChange={(event) => setAdminEmail(event.target.value)}
+                    autoComplete="email"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-password"
+                    className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
+                  >
+                    Contrasena
+                  </label>
+                  <input
+                    id="admin-password"
+                    type="password"
+                    value={adminPassword}
+                    onChange={(event) => setAdminPassword(event.target.value)}
+                    autoComplete="current-password"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleAdminLogin()}
+                  disabled={isSubmittingAdminAccess}
+                  className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                >
+                  {isSubmittingAdminAccess ? "Entrando..." : "Entrar como admin"}
+                </button>
+              </div>
+            )}
+
+            <p className="mt-2 text-[11px] text-slate-500">
+              {isLoadingAdminAccess
+                ? "Validando estado de sesion..."
+                : adminAccess.isAdmin
+                  ? "Admin activo"
+                  : adminAccess.isAuthenticated
+                    ? "Sesion iniciada sin rol admin"
+                    : "Sin sesion admin"}
+            </p>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 
@@ -1797,6 +1918,70 @@ function handleManualPieceSelectionChange(
                         {cart.length === 1 ? "" : "s"}
                       </p>
                     </div>
+
+                    {adminAccess.isAdmin && !orderCorrectionDraft ? (
+                      <div className="mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700">
+                              Captura retroactiva
+                            </p>
+                            <p className="mt-1 text-xs text-amber-700/85">
+                              Para pedidos de libreta no registrados; impacta inventario historico.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRetroactiveModeEnabled((current) => !current)
+                              if (!isRetroactiveModeEnabled) {
+                                setRetroactiveDateTimeLocal(formatNowForDateTimeLocalInput())
+                              }
+                            }}
+                            className={`rounded-2xl px-3 py-2 text-xs font-black uppercase tracking-[0.16em] transition ${
+                              isRetroactiveModeEnabled
+                                ? "bg-amber-700 text-white"
+                                : "bg-white text-amber-700 ring-1 ring-amber-300 hover:bg-amber-100"
+                            }`}
+                          >
+                            {isRetroactiveModeEnabled ? "Activa" : "Activar"}
+                          </button>
+                        </div>
+
+                        {isRetroactiveModeEnabled ? (
+                          <div className="mt-3 space-y-3">
+                            <label className="block">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                                Fecha y hora real
+                              </span>
+                              <input
+                                type="datetime-local"
+                                value={retroactiveDateTimeLocal}
+                                onChange={(event) =>
+                                  setRetroactiveDateTimeLocal(event.target.value)
+                                }
+                                className="mt-1.5 w-full rounded-2xl border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-amber-400"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                                Motivo (auditoria)
+                              </span>
+                              <input
+                                type="text"
+                                value={retroactiveReason}
+                                onChange={(event) => setRetroactiveReason(event.target.value)}
+                                placeholder="Ej: pedido de libreta no capturado"
+                                className="mt-1.5 w-full rounded-2xl border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-amber-400"
+                              />
+                            </label>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                              Si no existe inventario ese dia, se autocrea con stock anterior 0.
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <div className="flex-1 space-y-3 overflow-y-auto py-4">
                       {cart.length === 0 ? (
@@ -2132,7 +2317,9 @@ function handleManualPieceSelectionChange(
                       >
                         {isCheckingOut
                           ? "Registrando venta..."
-                          : `Confirmar Venta (${piezasInventario} pzs)`}
+                          : isRetroactiveModeEnabled
+                            ? `Registrar Retroactiva (${piezasInventario} pzs)`
+                            : `Confirmar Venta (${piezasInventario} pzs)`}
                       </button>
                     </div>
                   </div>

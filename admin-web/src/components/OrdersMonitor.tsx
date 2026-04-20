@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "react-hot-toast"
+import { ejecutarImpresionBluetooth, generarTextoTicket } from "../lib/printing"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
 import { formatDateTime } from "../lib/datetime"
@@ -17,6 +18,7 @@ import type {
   EliminarPedidoAdminResult,
   Pedido,
   PedidoDetalle,
+  PrintableOrder,
 } from "../types/database"
 
 type OrderWithClient = Pedido & {
@@ -49,7 +51,6 @@ type OrderWithClient = Pedido & {
 }
 
 type MonitorView = "active" | "history"
-type HistoryDayFilter = "today" | "yesterday" | "dayBeforeYesterday" | "custom"
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -77,13 +78,6 @@ function isHistoryOrderStatus(estado: Pedido["estado"]) {
   return HISTORY_ORDER_STATUSES.includes(normalizedStatus)
 }
 
-const HISTORY_DAY_FILTER_OPTIONS: Array<{ value: HistoryDayFilter; label: string }> = [
-  { value: "today", label: "Hoy" },
-  { value: "yesterday", label: "Ayer" },
-  { value: "dayBeforeYesterday", label: "Antier" },
-  { value: "custom", label: "Fecha" },
-]
-
 function getLocalDateInputValue(date = new Date()) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -92,68 +86,24 @@ function getLocalDateInputValue(date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
-function getDayFilterBounds(filter: HistoryDayFilter, customDate: string) {
-  const now = new Date()
-  const startOfToday = new Date(now)
-  startOfToday.setHours(0, 0, 0, 0)
+function getDayFilterBounds(selectedDate: string) {
+  const fallbackDate = getLocalDateInputValue()
+  const normalizedDate = selectedDate || fallbackDate
+  const [year, month, day] = normalizedDate.split("-").map((part) => Number.parseInt(part, 10))
 
-  if (filter === "custom") {
-    if (!customDate) {
-      return {
-        from: startOfToday.toISOString(),
-        to: now.toISOString(),
-      }
-    }
-
-    const [year, month, day] = customDate.split("-").map((part) => Number.parseInt(part, 10))
-
-    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-      return {
-        from: startOfToday.toISOString(),
-        to: now.toISOString(),
-      }
-    }
-
-    const startOfCustomDay = new Date(year, month - 1, day)
-    startOfCustomDay.setHours(0, 0, 0, 0)
-
-    const endOfCustomDay = new Date(startOfCustomDay)
-    endOfCustomDay.setHours(23, 59, 59, 999)
-
-    return {
-      from: startOfCustomDay.toISOString(),
-      to: endOfCustomDay.toISOString(),
-    }
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return getDayFilterBounds(fallbackDate)
   }
 
-  if (filter === "today") {
-    return { from: startOfToday.toISOString(), to: now.toISOString() }
-  }
+  const startOfSelectedDay = new Date(year, month - 1, day)
+  startOfSelectedDay.setHours(0, 0, 0, 0)
 
-  if (filter === "yesterday") {
-    const startOfYesterday = new Date(now)
-    startOfYesterday.setDate(startOfYesterday.getDate() - 1)
-    startOfYesterday.setHours(0, 0, 0, 0)
-
-    const endOfYesterday = new Date(startOfYesterday)
-    endOfYesterday.setHours(23, 59, 59, 999)
-
-    return {
-      from: startOfYesterday.toISOString(),
-      to: endOfYesterday.toISOString(),
-    }
-  }
-
-  const startOfDayBeforeYesterday = new Date(startOfToday)
-  startOfDayBeforeYesterday.setDate(startOfDayBeforeYesterday.getDate() - 2)
-  startOfDayBeforeYesterday.setHours(0, 0, 0, 0)
-
-  const endOfDayBeforeYesterday = new Date(startOfDayBeforeYesterday)
-  endOfDayBeforeYesterday.setHours(23, 59, 59, 999)
+  const endOfSelectedDay = new Date(startOfSelectedDay)
+  endOfSelectedDay.setHours(23, 59, 59, 999)
 
   return {
-    from: startOfDayBeforeYesterday.toISOString(),
-    to: endOfDayBeforeYesterday.toISOString(),
+    from: startOfSelectedDay.toISOString(),
+    to: endOfSelectedDay.toISOString(),
   }
 }
 
@@ -345,8 +295,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
   const [openActionsMenuOrderId, setOpenActionsMenuOrderId] = useState<string | null>(null)
   const [adminAccess, setAdminAccess] = useState<AdminAccess>(DEFAULT_ACCESS)
-  const [historyDayFilter, setHistoryDayFilter] = useState<HistoryDayFilter>("today")
-  const [customHistoryDate, setCustomHistoryDate] = useState(getLocalDateInputValue)
+  const [historyDate, setHistoryDate] = useState(getLocalDateInputValue)
   const [todayDashboardOrders, setTodayDashboardOrders] = useState<OrderWithClient[]>([])
 
   async function refreshAdminAccess() {
@@ -394,15 +343,14 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
 
   async function loadHistoryOrders(
     showLoader = true,
-    dayFilter = historyDayFilter,
-    selectedDate = customHistoryDate,
+    selectedDate = historyDate,
   ) {
     try {
       if (showLoader) {
         setIsLoadingHistory(true)
       }
 
-      const { from, to } = getDayFilterBounds(dayFilter, selectedDate)
+      const { from, to } = getDayFilterBounds(selectedDate)
 
       let historyQuery = supabase
         .from("pedidos")
@@ -483,15 +431,10 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
   }, [])
 
   useEffect(() => {
-    if (historyDayFilter !== "custom") {
-      void loadHistoryOrders()
-      return
-    }
-
-    if (customHistoryDate) {
+    if (historyDate) {
       void loadHistoryOrders()
     }
-  }, [historyDayFilter, customHistoryDate])
+  }, [historyDate])
 
   useEffect(() => {
     setOpenActionsMenuOrderId(null)
@@ -613,6 +556,100 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
     } catch (error) {
       console.error("Error al actualizar el pedido:", error)
       toast.error("No se pudo actualizar el pedido")
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+
+  async function handleReprintTicket(order: OrderWithClient) {
+    if (!adminAccess.isAuthenticated) {
+      toast.error("Debes iniciar sesion para reimprimir tickets")
+      return
+    }
+
+    try {
+      setProcessingOrderId(order.id)
+
+      const printableSupabase = supabase as typeof supabase & {
+        rpc: {
+          (
+            fn: "get_printable_order",
+            args: { p_pedido_id: string },
+          ): Promise<{
+            data: PrintableOrder | null
+            error: Error | null
+          }>
+        }
+      }
+
+      const { data: printableOrder, error } = await printableSupabase.rpc(
+        "get_printable_order",
+        {
+          p_pedido_id: order.id,
+        },
+      )
+
+      if (error) {
+        throw error
+      }
+
+      if (!printableOrder) {
+        throw new Error("No se pudo recuperar el pedido para impresion")
+      }
+
+      const ticketCocina = generarTextoTicket(printableOrder, true)
+      const ticketCliente = generarTextoTicket(printableOrder, false)
+
+      ejecutarImpresionBluetooth(ticketCocina)
+      window.setTimeout(() => {
+        ejecutarImpresionBluetooth(ticketCliente)
+      }, 4000)
+
+      toast.success(`Ticket reenviado para ${getShortOrderId(order.id)}`)
+    } catch (error) {
+      console.error("Error al reimprimir ticket:", error)
+      toast.error(
+        error instanceof Error ? error.message : "No se pudo reimprimir el ticket",
+      )
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+
+  async function handleRenotifyDispatch(order: OrderWithClient) {
+    if (!adminAccess.isAuthenticated) {
+      toast.error("Debes iniciar sesion para notificar al repartidor")
+      return
+    }
+
+    if (order.tipo_pedido !== "domicilio") {
+      toast.error("Solo los pedidos a domicilio se pueden volver a notificar")
+      return
+    }
+
+    try {
+      setProcessingOrderId(order.id)
+
+      const pushResult = await sendDispatchPushNotification({
+        title: "Nuevo pedido en camino",
+        body: `${order.clientes?.nombre ?? "Cliente"} - ${currencyFormatter.format(order.total)}`,
+        data: {
+          pedidoId: order.id,
+          tipoPedido: order.tipo_pedido,
+        },
+      })
+
+      if (!pushResult.delivered) {
+        toast("Pedido reenviado, pero no hay dispositivo registrado para push", {
+          icon: "i",
+        })
+        return
+      }
+
+      toast.success("Notificacion reenviada al repartidor")
+    } catch (error) {
+      console.error("Error al reenviar notificacion al repartidor:", error)
+      toast.error("No se pudo notificar al repartidor")
     } finally {
       setProcessingOrderId(null)
     }
@@ -751,7 +788,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
 
       await Promise.all([
         loadActiveOrders(false),
-        loadHistoryOrders(false, historyDayFilter),
+        loadHistoryOrders(false, historyDate),
         loadTodayDashboardOrders(),
       ])
 
@@ -810,6 +847,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
         original_pedido_id: order.id,
         short_order_id: getShortOrderId(order.id),
         created_at: new Date().toISOString(),
+        original_fecha_creacion: order.fecha_creacion,
         tipo_pedido: order.tipo_pedido,
         metodo_pago: order.metodo_pago,
         estado_pago: order.estado_pago,
@@ -827,7 +865,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
 
       await Promise.all([
         loadActiveOrders(false),
-        loadHistoryOrders(false, historyDayFilter),
+        loadHistoryOrders(false, historyDate),
         loadTodayDashboardOrders(),
       ])
 
@@ -949,6 +987,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
         original_pedido_id: order.id,
         short_order_id: getShortOrderId(order.id),
         created_at: new Date().toISOString(),
+        original_fecha_creacion: order.fecha_creacion,
         tipo_pedido: order.tipo_pedido,
         metodo_pago: order.metodo_pago,
         estado_pago: order.estado_pago,
@@ -966,7 +1005,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
 
       await Promise.all([
         loadActiveOrders(false),
-        loadHistoryOrders(false, historyDayFilter),
+        loadHistoryOrders(false, historyDate),
         loadTodayDashboardOrders(),
       ])
 
@@ -1124,94 +1163,72 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
-        <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Ventas hoy
-          </p>
-          <p className="mt-1 text-base font-black text-slate-900">
-            {currencyFormatter.format(todayDashboard.totalVentas)}
-          </p>
-        </article>
+      {view === "active" ? (
+        <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-6">
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Ventas hoy
+            </p>
+            <p className="mt-1 text-base font-black text-slate-900">
+              {currencyFormatter.format(todayDashboard.totalVentas)}
+            </p>
+          </article>
 
-        <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Pedidos hoy
-          </p>
-          <p className="mt-1 text-base font-black text-slate-900">{todayDashboard.pedidosHoy}</p>
-        </article>
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Pedidos hoy
+            </p>
+            <p className="mt-1 text-base font-black text-slate-900">{todayDashboard.pedidosHoy}</p>
+          </article>
 
-        <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Piezas vendidas
-          </p>
-          <p className="mt-1 text-base font-black text-slate-900">
-            {todayDashboard.piezasVendidas}
-          </p>
-        </article>
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Piezas vendidas
+            </p>
+            <p className="mt-1 text-base font-black text-slate-900">
+              {todayDashboard.piezasVendidas}
+            </p>
+          </article>
 
-        <article className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
-            Pendientes cobro
-          </p>
-          <p className="mt-1 text-base font-black text-amber-800">
-            {todayDashboard.pendientesCobro}
-          </p>
-        </article>
+          <article className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+              Pendientes cobro
+            </p>
+            <p className="mt-1 text-base font-black text-amber-800">
+              {todayDashboard.pendientesCobro}
+            </p>
+          </article>
 
-        <article className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-600">
-            Cancelados hoy
-          </p>
-          <p className="mt-1 text-base font-black text-rose-700">
-            {todayDashboard.canceladosHoy}
-          </p>
-        </article>
+          <article className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-600">
+              Cancelados hoy
+            </p>
+            <p className="mt-1 text-base font-black text-rose-700">
+              {todayDashboard.canceladosHoy}
+            </p>
+          </article>
 
-        <article className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-600">
-            En camino
-          </p>
-          <p className="mt-1 text-base font-black text-sky-700">{todayDashboard.enCaminoHoy}</p>
-        </article>
-      </div>
+          <article className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-600">
+              En camino
+            </p>
+            <p className="mt-1 text-base font-black text-sky-700">{todayDashboard.enCaminoHoy}</p>
+          </article>
+        </div>
+      ) : null}
 
       <div className="mt-6">
         {view === "history" ? (
-          <div className="mb-4 overflow-x-auto pb-1">
-            <div className="flex min-w-max flex-wrap items-center gap-2">
-              {HISTORY_DAY_FILTER_OPTIONS.map((filterOption) => {
-                const isActive = historyDayFilter === filterOption.value
-
-                return (
-                  <button
-                    key={filterOption.value}
-                    type="button"
-                    onClick={() => setHistoryDayFilter(filterOption.value)}
-                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-4 ${
-                      isActive
-                        ? "border-slate-900 bg-slate-900 text-white shadow-[0_8px_20px_rgba(15,23,42,0.16)] focus:ring-slate-200"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 focus:ring-slate-100"
-                    }`}
-                    aria-pressed={isActive}
-                  >
-                    {filterOption.label}
-                  </button>
-                )
-              })}
-
-              {historyDayFilter === "custom" ? (
-                <label className="ml-1 flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                  <span className="uppercase tracking-[0.1em] text-slate-500">Dia</span>
-                  <input
-                    type="date"
-                    value={customHistoryDate}
-                    onChange={(event) => setCustomHistoryDate(event.target.value)}
-                    className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-              ) : null}
-            </div>
+          <div className="mb-4 flex justify-start">
+            <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+              <span className="uppercase tracking-[0.14em] text-slate-500">Fecha</span>
+              <input
+                type="date"
+                value={historyDate}
+                onChange={(event) => setHistoryDate(event.target.value)}
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </label>
           </div>
         ) : null}
 
@@ -1395,7 +1412,7 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
                         </span>
                       ) : null}
 
-                      {view === "active" && adminAccess.isAdmin ? (
+                      {adminAccess.isAuthenticated ? (
                         <div className="relative">
                           <button
                             type="button"
@@ -1421,14 +1438,84 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
                                 type="button"
                                 onClick={() => {
                                   setOpenActionsMenuOrderId(null)
+                                  void handleReprintTicket(order)
+                                }}
+                                disabled={isProcessing}
+                                className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:text-slate-400"
+                              >
+                                Reimprimir ticket
+                              </button>
+
+                              {order.tipo_pedido === "domicilio" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionsMenuOrderId(null)
+                                    void handleRenotifyDispatch(order)
+                                  }}
+                                  disabled={isProcessing}
+                                  className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:cursor-not-allowed disabled:text-slate-400"
+                                >
+                                  Volver a notificar
+                                </button>
+                              ) : null}
+
+                              {view === "active" && canCancelOrder(order) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionsMenuOrderId(null)
+                                    void handleCancelOrder(order)
+                                  }}
+                                  disabled={isProcessing}
+                                  className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 transition hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:text-slate-400"
+                                >
+                                  Cancelar pedido
+                                </button>
+                              ) : null}
+
+                              {view === "active" && canCancelOrder(order) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionsMenuOrderId(null)
+                                    void handleCorrectOrder(order)
+                                  }}
+                                  disabled={isProcessing}
+                                  className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:cursor-not-allowed disabled:text-slate-400"
+                                >
+                                  Corregir pedido
+                                </button>
+                              ) : null}
+
+                              {adminAccess.isAdmin && view === "history" && canSupervisedCorrectHistoryOrder(order) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionsMenuOrderId(null)
+                                    void handleSupervisedHistoryCorrection(order)
+                                  }}
+                                  disabled={isProcessing}
+                                  className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:cursor-not-allowed disabled:text-slate-400"
+                                >
+                                  Corregir supervisada
+                                </button>
+                              ) : null}
+
+                              {adminAccess.isAdmin ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionsMenuOrderId(null)
                                   void handleDeleteOrder(order, view)
                                 }}
                                 disabled={isProcessing}
                                 aria-label={`Eliminar pedido ${getShortOrderId(order.id)}`}
                                 className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-200 disabled:cursor-not-allowed disabled:text-slate-400"
                               >
-                                Eliminar pedido
+                                {view === "history" ? "Eliminar registro" : "Eliminar pedido"}
                               </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -1585,52 +1672,6 @@ export function OrdersMonitor({ onStartCorrection }: OrdersMonitorProps) {
                             {statusAction.label}
                           </button>
                         ) : null}
-
-                        {canCancelOrder(order) ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleCancelOrder(order)}
-                            disabled={isProcessing}
-                            className="min-w-0 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-bold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                          >
-                            Cancelar pedido
-                          </button>
-                        ) : null}
-
-                        {canCancelOrder(order) ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleCorrectOrder(order)}
-                            disabled={isProcessing}
-                            className="min-w-0 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[13px] font-bold text-sky-800 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                          >
-                            Corregir pedido
-                          </button>
-                        ) : null}
-                      </>
-                    ) : null}
-
-                    {adminAccess.isAdmin && view === "history" ? (
-                      <>
-                        {canSupervisedCorrectHistoryOrder(order) ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleSupervisedHistoryCorrection(order)}
-                            disabled={isProcessing}
-                            className="w-full rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[13px] font-bold text-sky-800 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                          >
-                            Corregir (supervisada)
-                          </button>
-                        ) : null}
-
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteOrder(order, view)}
-                          disabled={isProcessing}
-                          className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          {view === "history" ? "Eliminar registro" : "Eliminar pedido"}
-                        </button>
                       </>
                     ) : null}
                   </div>

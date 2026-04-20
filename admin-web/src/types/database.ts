@@ -580,6 +580,12 @@ export interface RegistrarVentaPosResult extends Record<string, unknown> {
   estado_pago: EstadoPago;
   cliente_id: UUID | null;
   estado: PedidoEstado | null;
+  retroactiva_supervisada?: boolean;
+  inventory_id?: UUID;
+  inventory_autocreated?: boolean;
+  audit_event_id?: UUID | null;
+  fecha_inventario_objetivo?: ISODateString;
+  motivo?: string;
 }
 export interface PrintableOrderItemRpc extends Record<string, unknown> {
   detalle_id: UUID;
@@ -916,6 +922,20 @@ export interface Database {
           p_estado?: string | null;
           p_fecha?: ISODateString;
           p_pedido_corregido_de_id?: UUID | null;
+          p_detalles?: Json;
+        };
+        Returns: RegistrarVentaPosResult;
+      };
+      registrar_venta_pos_retroactiva_supervisada: {
+        Args: {
+          p_total: number;
+          p_tipo_pedido: string;
+          p_metodo_pago: string;
+          p_estado_pago: string;
+          p_cliente_id?: UUID | null;
+          p_estado?: string | null;
+          p_fecha_hora_objetivo: ISODateTimeString;
+          p_motivo: string;
           p_detalles?: Json;
         };
         Returns: RegistrarVentaPosResult;

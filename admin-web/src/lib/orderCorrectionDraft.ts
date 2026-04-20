@@ -28,6 +28,7 @@ export type OrderCorrectionDraft = {
   original_pedido_id: UUID
   short_order_id: string
   created_at: string
+  original_fecha_creacion: string | null
   tipo_pedido: PedidoTipo
   metodo_pago: MetodoPago | null
   estado_pago: EstadoPago
@@ -155,6 +156,10 @@ export function getOrderCorrectionDraftFromStorage(): OrderCorrectionDraft | nul
         typeof parsedValue.created_at === "string"
           ? parsedValue.created_at
           : new Date().toISOString(),
+      original_fecha_creacion:
+        typeof parsedValue.original_fecha_creacion === "string"
+          ? parsedValue.original_fecha_creacion
+          : null,
       tipo_pedido:
         parsedValue.tipo_pedido === "domicilio" ? "domicilio" : "mostrador",
       metodo_pago:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "react-hot-toast"
 import { ejecutarImpresionBluetooth, generarTextoTicket } from "../lib/printing"
+import type { PrintableOrder } from "../lib/printing"
 import { getAdminAccess, type AdminAccess } from "../lib/admin"
 import { registrarEventoAuditoriaBestEffort } from "../lib/audit"
 import { formatDateTime } from "../lib/datetime"
@@ -18,7 +19,6 @@ import type {
   EliminarPedidoAdminResult,
   Pedido,
   PedidoDetalle,
-  PrintableOrder,
 } from "../types/database"
 
 type OrderWithClient = Pedido & {

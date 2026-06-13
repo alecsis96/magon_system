@@ -15,6 +15,9 @@ app-repartidor/node_modules/
 app-repartidor/dist/
 app-repartidor/.expo/
 app-repartidor/.expo-shared/
+app-pos/.expo/
+app-pos/.expo-shared/
+app-pos/node_modules/
 app-repartidor/.git_backup_nested/
 app-repartidor/.vscode/
 app-repartidor/*firebase-adminsdk*.json

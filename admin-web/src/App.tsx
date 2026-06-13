@@ -654,6 +654,27 @@ function App() {
   const [retroactiveReason, setRetroactiveReason] = useState("")
   const posAdminPanelRef = useRef<HTMLDivElement | null>(null)
 
+  useEffect(() => {
+    const tabletMediaQuery = window.matchMedia(
+      "(min-width: 768px) and (max-width: 1280px) and (pointer: coarse)",
+    )
+
+    const syncTabletDensity = () => {
+      document.documentElement.classList.toggle(
+        "tablet-ui",
+        tabletMediaQuery.matches,
+      )
+    }
+
+    syncTabletDensity()
+    tabletMediaQuery.addEventListener("change", syncTabletDensity)
+
+    return () => {
+      document.documentElement.classList.remove("tablet-ui")
+      tabletMediaQuery.removeEventListener("change", syncTabletDensity)
+    }
+  }, [])
+
   const refreshAdminAccess = useCallback(async () => {
     try {
       setIsLoadingAdminAccess(true)
@@ -2228,7 +2249,7 @@ function handleManualPieceSelectionChange(
                     </div>
 
                     <div className="mt-auto border-t border-dashed border-slate-200 pt-4">
-                      <div className="mb-4 space-y-4 rounded-3xl bg-slate-50 p-5">
+                      <div className="tablet-compact-panel mb-4 space-y-4 rounded-3xl bg-slate-50 p-5">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                             Metodo de pago
@@ -2245,7 +2266,7 @@ function handleManualPieceSelectionChange(
                                   key={option.id}
                                   type="button"
                                   onClick={() => setMetodoPago(option.id)}
-                                  className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                                  className={`tablet-compact-toggle rounded-2xl px-4 py-3 text-sm font-bold transition ${
                                     isActive
                                       ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)]"
                                       : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
@@ -2274,7 +2295,7 @@ function handleManualPieceSelectionChange(
                                   key={option.id}
                                   type="button"
                                   onClick={() => setEstadoPago(option.id)}
-                                  className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                                  className={`tablet-compact-toggle rounded-2xl px-4 py-3 text-sm font-bold transition ${
                                     isActive
                                       ? option.id === "pagado"
                                         ? "bg-emerald-600 text-white shadow-[0_10px_25px_rgba(5,150,105,0.22)]"
@@ -2290,7 +2311,7 @@ function handleManualPieceSelectionChange(
                         </div>
                       </div>
 
-                      <div className="space-y-3 rounded-3xl bg-slate-50 p-5">
+                      <div className="tablet-compact-panel space-y-3 rounded-3xl bg-slate-50 p-5">
                         <div className="flex items-center justify-between text-sm text-slate-500">
                           <span>Subtotal</span>
                           <span className="font-semibold text-slate-900">
@@ -2313,7 +2334,7 @@ function handleManualPieceSelectionChange(
                         type="button"
                         onClick={handleCheckoutPress}
                         disabled={isCheckoutDisabled}
-                        className="mt-5 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                        className="tablet-compact-checkout mt-5 w-full rounded-3xl bg-slate-900 px-6 py-5 text-lg font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
                       >
                         {isCheckingOut
                           ? "Registrando venta..."
@@ -2352,7 +2373,7 @@ function handleManualPieceSelectionChange(
       </div>
 
       {isMoreMenuOpen ? (
-        <div className="fixed inset-x-4 bottom-24 z-50 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:inset-x-auto sm:right-6 sm:w-[18rem] sm:bottom-28">
+        <div className="tablet-compact-menu fixed inset-x-4 bottom-24 z-50 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)] sm:inset-x-auto sm:right-6 sm:w-[18rem] sm:bottom-28">
           {SECONDARY_TAB_CHIPS.map((tab) => {
             const isActive = activeTab === tab.id
 
@@ -2364,7 +2385,7 @@ function handleManualPieceSelectionChange(
                   setActiveTab(tab.id)
                   setIsMoreMenuOpen(false)
                 }}
-                className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
+                className={`tablet-compact-toggle flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
                   isActive
                     ? "bg-slate-900 text-white"
                     : "text-slate-700 hover:bg-slate-50"
@@ -2382,7 +2403,7 @@ function handleManualPieceSelectionChange(
         </div>
       ) : null}
 
-      <nav className="fixed bottom-0 left-0 z-50 w-full border-t border-gray-200 bg-white">
+      <nav className="tablet-compact-nav fixed bottom-0 left-0 z-50 w-full border-t border-gray-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-around px-2 py-2">
           <button
             type="button"
@@ -2390,7 +2411,7 @@ function handleManualPieceSelectionChange(
               setActiveTab("POS")
               setIsMoreMenuOpen(false)
             }}
-            className={`flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
+            className={`tablet-compact-nav-button flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
               activeTab === "POS" ? "text-slate-900" : "text-gray-400"
             }`}
             aria-current={activeTab === "POS" ? "page" : undefined}
@@ -2405,7 +2426,7 @@ function handleManualPieceSelectionChange(
               setActiveTab("MONITOR")
               setIsMoreMenuOpen(false)
             }}
-            className={`flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
+            className={`tablet-compact-nav-button flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
               activeTab === "MONITOR" ? "text-slate-900" : "text-gray-400"
             }`}
             aria-current={activeTab === "MONITOR" ? "page" : undefined}
@@ -2417,7 +2438,7 @@ function handleManualPieceSelectionChange(
           <button
             type="button"
             onClick={() => setIsMoreMenuOpen((current) => !current)}
-            className={`flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
+            className={`tablet-compact-nav-button flex min-w-[72px] flex-col items-center gap-1 rounded-2xl px-3 py-1.5 transition ${
               menuIsActive ? "text-slate-900" : "text-gray-400"
             }`}
             aria-expanded={isMoreMenuOpen}

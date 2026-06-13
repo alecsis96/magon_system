@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Magon POS",
+    "slug": "magon-pos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "scheme": "magonpos",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.polleriamagon.pos",
+      "permissions": [
+        "INTERNET"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/icon-512.png"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [],
+    "experiments": {
+      "reactCompiler": true
+    }
+  }
+}

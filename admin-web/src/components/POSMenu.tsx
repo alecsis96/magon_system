@@ -138,7 +138,7 @@ export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
   }
 
   return (
-    <section className="min-h-full rounded-[2rem] bg-gray-50 px-4 py-4 text-gray-900 sm:px-5 sm:py-5 lg:px-6">
+    <section className="tablet-compact-shell min-h-full rounded-[2rem] bg-gray-50 px-4 py-4 text-gray-900 sm:px-5 sm:py-5 lg:px-6">
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-col gap-3 sm:mb-5">
           <div className="flex items-start justify-between gap-3">
@@ -186,7 +186,7 @@ export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
                   key={producto.id}
                   type="button"
                   onClick={() => handleSelectProduct(producto)}
-                  className="flex min-h-[182px] flex-col justify-between rounded-2xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-all duration-150 hover:border-gray-200 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-gray-200 active:scale-95 active:shadow-inner sm:min-h-[206px]"
+                  className="tablet-compact-product flex min-h-[182px] flex-col justify-between rounded-2xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-all duration-150 hover:border-gray-200 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-gray-200 active:scale-95 active:shadow-inner sm:min-h-[206px]"
                 >
                   <div>
                     <span
@@ -198,7 +198,7 @@ export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
 
                   <div className="mt-4 flex flex-1 flex-col justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold leading-tight text-gray-900">
+                      <h2 className="tablet-compact-product-title text-lg font-semibold leading-tight text-gray-900">
                         {producto.nombre}
                       </h2>
                       <p className="mt-1.5 line-clamp-2 text-sm text-gray-600">
@@ -206,7 +206,7 @@ export function POSMenu({ onSelectProduct, headerAction }: POSMenuProps) {
                       </p>
                     </div>
 
-                    <p className="mt-4 text-xl font-extrabold text-gray-950">
+                    <p className="tablet-compact-product-price mt-4 text-xl font-extrabold text-gray-950">
                       {currencyFormatter.format(producto.precio)}
                     </p>
                   </div>

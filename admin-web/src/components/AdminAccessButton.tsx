@@ -200,7 +200,7 @@ export function AdminAccessButton({
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   autoComplete="email"
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                  className="tablet-compact-input mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>
 
@@ -217,7 +217,7 @@ export function AdminAccessButton({
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"
-                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                  className="tablet-compact-input mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 outline-none transition focus:border-slate-400"
                 />
               </div>
 
@@ -225,7 +225,7 @@ export function AdminAccessButton({
                 type="button"
                 onClick={() => void handleLogin()}
                 disabled={isSubmitting}
-                className="w-full rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                className="tablet-compact-checkout w-full rounded-3xl bg-slate-900 px-6 py-4 text-sm font-black text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
               >
                 {isSubmitting ? "Entrando..." : "Entrar como admin"}
               </button>
